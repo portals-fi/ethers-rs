@@ -749,7 +749,7 @@ impl<M: Middleware> Multicall<M> {
                             let mut res_tokens = call
                                 .function
                                 .decode_output(bytes)
-                                .map_err(ContractError::DecodingError)?;
+                                .unwrap_or(vec![Token::Uint(U256::zero())]);
                             match res_tokens.len() {
                                 0 => Token::Tuple(vec![]),
                                 1 => res_tokens.remove(0),
