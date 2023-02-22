@@ -1,10 +1,7 @@
-use std::collections::{btree_map::Entry, BTreeMap, HashMap, HashSet};
+//! Methods expansion
 
-use super::{types, util, Context};
-use crate::{
-    contract::common::{expand_data_struct, expand_data_tuple, expand_param_type, expand_params},
-    util::can_derive_defaults,
-};
+use super::{structs::expand_struct, types, Context};
+use crate::util;
 use ethers_core::{
     abi::{Function, FunctionExt, Param, ParamType},
     macros::{ethers_contract_crate, ethers_core_crate},
@@ -14,6 +11,7 @@ use eyre::{Context as _, Result};
 use inflector::Inflector;
 use proc_macro2::{Literal, TokenStream};
 use quote::quote;
+use std::collections::{btree_map::Entry, BTreeMap, HashMap, HashSet};
 use syn::Ident;
 
 /// The maximum amount of overloaded functions that are attempted to auto aliased with their param
@@ -34,7 +32,7 @@ impl Context {
             .map(|function| {
                 let signature = function.abi_signature();
                 self.expand_function(function, aliases.get(&signature).cloned())
-                    .with_context(|| format!("error expanding function '{signature}'"))
+                    .wrap_err_with(|| eyre::eyre!("error expanding function '{signature}'"))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -51,11 +49,10 @@ impl Context {
     }
 
     /// Returns all deploy (constructor) implementations
-    pub(crate) fn deployment_methods(&self) -> TokenStream {
-        if self.contract_bytecode.is_none() {
-            // don't generate deploy if no bytecode
-            return quote! {}
-        }
+    pub(crate) fn deployment_methods(&self) -> Option<TokenStream> {
+        // don't generate deploy if no bytecode
+        self.contract_bytecode.as_ref()?;
+
         let ethers_core = ethers_core_crate();
         let ethers_contract = ethers_contract_crate();
 
@@ -69,14 +66,14 @@ impl Context {
             #bytecode_name.clone().into()
         };
 
-        let deploy = quote! {
+        Some(quote! {
             /// Constructs the general purpose `Deployer` instance based on the provided constructor arguments and sends it.
             /// Returns a new instance of a deployer that returns an instance of this contract after sending the transaction
             ///
             /// Notes:
-            /// 1. If there are no constructor arguments, you should pass `()` as the argument.
-            /// 1. The default poll duration is 7 seconds.
-            /// 1. The default number of confirmations is 1 block.
+            /// - If there are no constructor arguments, you should pass `()` as the argument.
+            /// - The default poll duration is 7 seconds.
+            /// - The default number of confirmations is 1 block.
             ///
             ///
             /// # Example
@@ -87,22 +84,22 @@ impl Context {
             ///
             /// ```ignore
             /// # async fn deploy<M: ethers::providers::Middleware>(client: ::std::sync::Arc<M>) {
-            ///     abigen!(Greeter,"../greeter.json");
+            ///     abigen!(Greeter, "../greeter.json");
             ///
             ///    let greeter_contract = Greeter::deploy(client, "Hello world!".to_string()).unwrap().send().await.unwrap();
             ///    let msg = greeter_contract.greet().call().await.unwrap();
             /// # }
             /// ```
-            pub fn deploy<T: #ethers_core::abi::Tokenize >(client: ::std::sync::Arc<M>, constructor_args: T) -> ::std::result::Result<#ethers_contract::builders::ContractDeployer<M, Self>, #ethers_contract::ContractError<M>> {
-               let factory = #ethers_contract::ContractFactory::new(#get_abi, #get_bytecode, client);
-               let deployer = factory.deploy(constructor_args)?;
-               let deployer = #ethers_contract::ContractDeployer::new(deployer);
-               Ok(deployer)
+            pub fn deploy<T: #ethers_core::abi::Tokenize>(
+                client: ::std::sync::Arc<M>,
+                constructor_args: T,
+            ) -> ::core::result::Result<#ethers_contract::builders::ContractDeployer<M, Self>, #ethers_contract::ContractError<M>> {
+                let factory = #ethers_contract::ContractFactory::new(#get_abi, #get_bytecode, client);
+                let deployer = factory.deploy(constructor_args)?;
+                let deployer = #ethers_contract::ContractDeployer::new(deployer);
+                Ok(deployer)
             }
-
-        };
-
-        deploy
+        })
     }
 
     /// Expands to the corresponding struct type based on the inputs of the given function
@@ -111,44 +108,29 @@ impl Context {
         function: &Function,
         alias: Option<&MethodAlias>,
     ) -> Result<TokenStream> {
-        let call_name = expand_call_struct_name(function, alias);
+        let struct_name = expand_call_struct_name(function, alias);
+
         let fields = self.expand_input_params(function)?;
         // expand as a tuple if all fields are anonymous
         let all_anonymous_fields = function.inputs.iter().all(|input| input.name.is_empty());
-        let call_type_definition = if all_anonymous_fields {
-            // expand to a tuple struct
-            expand_data_tuple(&call_name, &fields)
-        } else {
-            // expand to a struct
-            expand_data_struct(&call_name, &fields)
-        };
+        let call_type_definition = expand_struct(&struct_name, &fields, all_anonymous_fields);
+
         let function_name = &function.name;
         let abi_signature = function.abi_signature();
-        let doc = format!(
-            "Container type for all input parameters for the `{}` function with signature `{}` and selector `0x{}`",
-            function.name,
-            abi_signature,
-            hex::encode(&function.selector()[..])
+        let doc_str = format!(
+            "Container type for all input parameters for the `{function_name}` function with signature `{abi_signature}` and selector `0x{}`",
+            hex::encode(function.selector())
         );
-        let abi_signature_doc = util::expand_doc(&doc);
-        let ethers_contract = ethers_contract_crate();
-        // use the same derives as for events
-        let derives = util::expand_derives(&self.event_derives);
 
-        // rust-std only derives default automatically for arrays len <= 32
-        // for large array types we skip derive(Default) <https://github.com/gakonst/ethers-rs/issues/1640>
-        let derive_default = if can_derive_defaults(&function.inputs) {
-            quote! {
-                #[derive(Default)]
-            }
-        } else {
-            quote! {}
-        };
+        let mut derives = self.expand_extra_derives();
+        let params = function.inputs.iter().map(|param| &param.kind);
+        util::derive_builtin_traits(params, &mut derives, true, true);
+
+        let ethers_contract = ethers_contract_crate();
 
         Ok(quote! {
-            #abi_signature_doc
-            #[derive(Clone, Debug, Eq, PartialEq, #ethers_contract::EthCall, #ethers_contract::EthDisplay, #derives)]
-            #derive_default
+            #[doc = #doc_str]
+            #[derive(Clone, #ethers_contract::EthCall, #ethers_contract::EthDisplay, #derives)]
             #[ethcall( name = #function_name, abi = #abi_signature )]
             pub #call_type_definition
         })
@@ -159,57 +141,45 @@ impl Context {
         &self,
         function: &Function,
         alias: Option<&MethodAlias>,
-    ) -> Result<TokenStream> {
-        let struct_name = expand_return_struct_name(function, alias);
-        let fields = self.expand_output_params(function)?;
+    ) -> Result<Option<TokenStream>> {
         // no point in having structs when there is no data returned
         if function.outputs.is_empty() {
-            return Ok(TokenStream::new())
+            return Ok(None)
         }
+
+        let name = &function.name;
+
+        let struct_name = expand_return_struct_name(function, alias);
+        let fields = self.expand_output_params(function)?;
         // expand as a tuple if all fields are anonymous
         let all_anonymous_fields = function.outputs.iter().all(|output| output.name.is_empty());
-        let return_type_definition = if all_anonymous_fields {
-            // expand to a tuple struct
-            expand_data_tuple(&struct_name, &fields)
-        } else {
-            // expand to a struct
-            expand_data_struct(&struct_name, &fields)
-        };
+        let return_type_definition = expand_struct(&struct_name, &fields, all_anonymous_fields);
+
         let abi_signature = function.abi_signature();
-        let doc = format!(
-            "Container type for all return fields from the `{}` function with signature `{}` and selector `0x{}`",
-            function.name,
-            abi_signature,
-            hex::encode(&function.selector()[..])
+        let doc_str = format!(
+            "Container type for all return fields from the `{name}` function with signature `{abi_signature}` and selector `0x{}`",
+            hex::encode(function.selector())
         );
-        let abi_signature_doc = util::expand_doc(&doc);
+
+        let mut derives = self.expand_extra_derives();
+        let params = function.inputs.iter().map(|param| &param.kind);
+        util::derive_builtin_traits(params, &mut derives, true, true);
+
         let ethers_contract = ethers_contract_crate();
-        // use the same derives as for events
-        let derives = util::expand_derives(&self.event_derives);
 
-        // rust-std only derives default automatically for arrays len <= 32
-        // for large array types we skip derive(Default) <https://github.com/gakonst/ethers-rs/issues/1640>
-        let derive_default = if can_derive_defaults(&function.outputs) {
-            quote! {
-                #[derive(Default)]
-            }
-        } else {
-            quote! {}
-        };
-
-        Ok(quote! {
-            #abi_signature_doc
-            #[derive(Clone, Debug,Eq, PartialEq, #ethers_contract::EthAbiType, #ethers_contract::EthAbiCodec, #derives)]
-             #derive_default
+        Ok(Some(quote! {
+            #[doc = #doc_str]
+            #[derive(Clone, #ethers_contract::EthAbiType, #ethers_contract::EthAbiCodec, #derives)]
             pub #return_type_definition
-        })
+        }))
     }
 
     /// Expands all call structs
     fn expand_call_structs(&self, aliases: BTreeMap<String, MethodAlias>) -> Result<TokenStream> {
-        let mut struct_defs = Vec::new();
-        let mut struct_names = Vec::new();
-        let mut variant_names = Vec::new();
+        let len = self.abi.functions.len();
+        let mut struct_defs = Vec::with_capacity(len);
+        let mut struct_names = Vec::with_capacity(len);
+        let mut variant_names = Vec::with_capacity(len);
         for function in self.abi.functions.values().flatten() {
             let signature = function.abi_signature();
             let alias = aliases.get(&signature);
@@ -218,86 +188,89 @@ impl Context {
             variant_names.push(expand_call_struct_variant_name(function, alias));
         }
 
-        let struct_def_tokens = quote! {
-            #(#struct_defs)*
-        };
+        let struct_def_tokens = quote!(#(#struct_defs)*);
 
         if struct_defs.len() <= 1 {
             // no need for an enum
             return Ok(struct_def_tokens)
         }
 
+        let mut derives = self.expand_extra_derives();
+        let params =
+            self.abi.functions.values().flatten().flat_map(|f| &f.inputs).map(|param| &param.kind);
+        util::derive_builtin_traits(params, &mut derives, false, true);
+
+        let enum_name = self.expand_calls_enum_name();
+
         let ethers_core = ethers_core_crate();
         let ethers_contract = ethers_contract_crate();
 
-        // use the same derives as for events
-        let derives = util::expand_derives(&self.event_derives);
-        let enum_name = self.expand_calls_enum_name();
-
-        Ok(quote! {
+        let tokens = quote! {
             #struct_def_tokens
 
-           #[derive(Debug, Clone, PartialEq, Eq, #ethers_contract::EthAbiType, #derives)]
+            #[doc = "Container type for all of the contract's call "]
+            #[derive(Clone, #ethers_contract::EthAbiType, #derives)]
             pub enum #enum_name {
-                #(#variant_names(#struct_names)),*
+                #( #variant_names(#struct_names), )*
             }
 
-        impl  #ethers_core::abi::AbiDecode for #enum_name {
-            fn decode(data: impl AsRef<[u8]>) -> ::std::result::Result<Self, #ethers_core::abi::AbiError> {
-                 #(
-                    if let Ok(decoded) = <#struct_names as #ethers_core::abi::AbiDecode>::decode(data.as_ref()) {
-                        return Ok(#enum_name::#variant_names(decoded))
+            impl #ethers_core::abi::AbiDecode for #enum_name {
+                fn decode(data: impl AsRef<[u8]>) -> ::core::result::Result<Self, #ethers_core::abi::AbiError> {
+                    let data = data.as_ref();
+                    #(
+                        if let Ok(decoded) = <#struct_names as #ethers_core::abi::AbiDecode>::decode(data) {
+                            return Ok(Self::#variant_names(decoded))
+                        }
+                    )*
+                    Err(#ethers_core::abi::Error::InvalidData.into())
+                }
+            }
+
+            impl #ethers_core::abi::AbiEncode for #enum_name {
+                fn encode(self) -> Vec<u8> {
+                    match self {
+                        #(
+                            Self::#variant_names(element) => #ethers_core::abi::AbiEncode::encode(element),
+                        )*
                     }
-                )*
-                Err(#ethers_core::abi::Error::InvalidData.into())
-            }
-        }
-
-         impl  #ethers_core::abi::AbiEncode for #enum_name {
-            fn encode(self) -> Vec<u8> {
-                match self {
-                    #(
-                        #enum_name::#variant_names(element) => element.encode()
-                    ),*
                 }
             }
-        }
 
-        impl ::std::fmt::Display for #enum_name {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                match self {
-                    #(
-                        #enum_name::#variant_names(element) => element.fmt(f)
-                    ),*
+            impl ::core::fmt::Display for #enum_name {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        #(
+                            Self::#variant_names(element) => ::core::fmt::Display::fmt(element, f),
+                        )*
+                    }
                 }
             }
-        }
 
-        #(
-            impl ::std::convert::From<#struct_names> for #enum_name {
-                fn from(var: #struct_names) -> Self {
-                    #enum_name::#variant_names(var)
+            #(
+                impl ::core::convert::From<#struct_names> for #enum_name {
+                    fn from(value: #struct_names) -> Self {
+                        Self::#variant_names(value)
+                    }
                 }
-            }
-        )*
+            )*
+        };
 
-        })
+        Ok(tokens)
     }
 
     /// Expands all return structs
     fn expand_return_structs(&self, aliases: BTreeMap<String, MethodAlias>) -> Result<TokenStream> {
-        let mut struct_defs = Vec::new();
+        let mut tokens = TokenStream::new();
         for function in self.abi.functions.values().flatten() {
             let signature = function.abi_signature();
             let alias = aliases.get(&signature);
-            struct_defs.push(self.expand_return_struct(function, alias)?);
+            match self.expand_return_struct(function, alias) {
+                Ok(Some(def)) => tokens.extend(def),
+                Ok(None) => {}
+                Err(e) => return Err(e),
+            }
         }
-
-        let struct_def_tokens = quote! {
-            #(#struct_defs)*
-        };
-
-        Ok(struct_def_tokens)
+        Ok(tokens)
     }
 
     /// The name ident of the calls enum
@@ -307,127 +280,45 @@ impl Context {
 
     /// Expands to the `name : type` pairs of the function's inputs
     fn expand_input_params(&self, fun: &Function) -> Result<Vec<(TokenStream, TokenStream)>> {
-        fun.inputs
-            .iter()
-            .enumerate()
-            .map(|(idx, param)| {
-                let name = util::expand_input_name(idx, &param.name);
-                let ty = self.expand_input_param_type(fun, &param.name, &param.kind)?;
-                Ok((name, ty))
-            })
-            .collect()
-    }
-
-    /// Expands to the `name : type` pairs of the function's outputs
-    fn expand_output_params(&self, fun: &Function) -> Result<Vec<(TokenStream, TokenStream)>> {
-        expand_params(&fun.outputs, |s| {
-            self.internal_structs.get_function_output_struct_type(&fun.name, s)
+        types::expand_params(&fun.inputs, |p| {
+            self.internal_structs.get_function_input_struct_type(&fun.name, &p.name)
         })
     }
 
-    /// Expands to the return type of a function
-    fn expand_outputs(&self, fun: &Function) -> Result<TokenStream> {
-        let mut outputs = Vec::with_capacity(fun.outputs.len());
-        for param in fun.outputs.iter() {
-            let ty = self.expand_output_param_type(fun, param, &param.kind)?;
-            outputs.push(ty);
-        }
-
-        let return_ty = match outputs.len() {
-            0 => quote! { () },
-            1 => outputs[0].clone(),
-            _ => {
-                quote! { (#( #outputs ),*) }
-            }
-        };
-        Ok(return_ty)
+    /// Expands to the `name: type` pairs of the function's outputs
+    fn expand_output_params(&self, fun: &Function) -> Result<Vec<(TokenStream, TokenStream)>> {
+        types::expand_params(&fun.outputs, |p| {
+            p.internal_type
+                .as_deref()
+                .and_then(|s| self.internal_structs.get_function_output_struct_type(&fun.name, s))
+        })
     }
 
     /// Expands the arguments for the call that eventually calls the contract
-    fn expand_contract_call_args(&self, fun: &Function) -> Result<TokenStream> {
-        let mut call_args = Vec::with_capacity(fun.inputs.len());
-        for (idx, param) in fun.inputs.iter().enumerate() {
+    fn expand_contract_call_args(&self, fun: &Function) -> TokenStream {
+        let mut call_args = fun.inputs.iter().enumerate().map(|(idx, param)| {
             let name = util::expand_input_name(idx, &param.name);
-            let call_arg = match param.kind {
+            match param.kind {
                 // this is awkward edge case where the function inputs are a single struct
-                // we need to force this argument into a tuple so it gets expanded to `((#name,))`
-                // this is currently necessary because internally `flatten_tokens` is called which
-                // removes the outermost `tuple` level and since `((#name))` is not
-                // a rust tuple it doesn't get wrapped into another tuple that will be peeled off by
-                // `flatten_tokens`
+                // we need to force this argument into a tuple so it gets expanded to
+                // `((#name,))` this is currently necessary because
+                // internally `flatten_tokens` is called which removes the
+                // outermost `tuple` level and since `((#name))` is not
+                // a rust tuple it doesn't get wrapped into another tuple that will be peeled
+                // off by `flatten_tokens`
                 ParamType::Tuple(_) if fun.inputs.len() == 1 => {
                     // make sure the tuple gets converted to `Token::Tuple`
-                    quote! {(#name,)}
+                    quote!((#name,))
                 }
                 _ => name,
-            };
-            call_args.push(call_arg);
+            }
+        });
+
+        match fun.inputs.len() {
+            0 => quote!(()),
+            1 => call_args.next().unwrap(),
+            _ => quote!(( #( #call_args ),* )),
         }
-        let call_args = match call_args.len() {
-            0 => quote! { () },
-            1 => quote! { #( #call_args )* },
-            _ => quote! { ( #(#call_args, )* ) },
-        };
-
-        Ok(call_args)
-    }
-
-    /// returns the Tokenstream for the corresponding rust type of the param
-    fn expand_input_param_type(
-        &self,
-        fun: &Function,
-        param: &str,
-        kind: &ParamType,
-    ) -> Result<TokenStream> {
-        let ethers_core = ethers_core_crate();
-        match kind {
-            ParamType::Array(ty) => {
-                let ty = self.expand_input_param_type(fun, param, ty)?;
-                Ok(quote! {
-                    ::std::vec::Vec<#ty>
-                })
-            }
-            ParamType::FixedArray(ty, size) => {
-                let ty = match **ty {
-                    ParamType::Uint(size) => {
-                        if size / 8 == 1 {
-                            // this prevents type ambiguity with `FixedBytes`
-                            quote! { #ethers_core::types::Uint8}
-                        } else {
-                            self.expand_input_param_type(fun, param, ty)?
-                        }
-                    }
-                    _ => self.expand_input_param_type(fun, param, ty)?,
-                };
-
-                let size = *size;
-                Ok(quote! {[#ty; #size]})
-            }
-            ParamType::Tuple(_) => {
-                let ty = if let Some(rust_struct_name) =
-                    self.internal_structs.get_function_input_struct_type(&fun.name, param)
-                {
-                    let ident = util::ident(rust_struct_name);
-                    quote! {#ident}
-                } else {
-                    types::expand(kind)?
-                };
-                Ok(ty)
-            }
-            _ => types::expand(kind),
-        }
-    }
-
-    /// returns the TokenStream for the corresponding rust type of the output param
-    fn expand_output_param_type(
-        &self,
-        fun: &Function,
-        param: &Param,
-        kind: &ParamType,
-    ) -> Result<TokenStream> {
-        expand_param_type(param, kind, |s| {
-            self.internal_structs.get_function_output_struct_type(&fun.name, s)
-        })
     }
 
     /// Expands a single function with the given alias
@@ -436,30 +327,38 @@ impl Context {
         function: &Function,
         alias: Option<MethodAlias>,
     ) -> Result<TokenStream> {
-        let ethers_contract = ethers_contract_crate();
+        let name = &function.name;
+        let function_name = expand_function_name(function, alias.as_ref());
+        let selector = function.selector();
 
-        let name = expand_function_name(function, alias.as_ref());
-        let selector = expand_selector(function.selector());
+        let selector_tokens = expand_selector(selector);
 
-        let contract_args = self.expand_contract_call_args(function)?;
+        let contract_args = self.expand_contract_call_args(function);
         let function_params =
             self.expand_input_params(function)?.into_iter().map(|(name, ty)| quote! { #name: #ty });
         let function_params = quote! { #( , #function_params )* };
 
-        let outputs = self.expand_outputs(function)?;
+        let outputs = {
+            let mut out = self.expand_output_params(function)?;
+            match out.len() {
+                0 => quote!(()),
+                1 => out.pop().unwrap().1,
+                _ => {
+                    let iter = out.into_iter().map(|(_, ty)| ty);
+                    quote!(( #( #iter ),* ))
+                }
+            }
+        };
 
-        let result = quote! { #ethers_contract::builders::ContractCall<M, #outputs> };
+        let doc_str =
+            format!("Calls the contract's `{name}` (0x{}) function", hex::encode(selector));
 
-        let doc = util::expand_doc(&format!(
-            "Calls the contract's `{}` (0x{}) function",
-            function.name,
-            hex::encode(function.selector())
-        ));
+        let ethers_contract = ethers_contract_crate();
+
         Ok(quote! {
-
-            #doc
-            pub fn #name(&self #function_params) -> #result {
-                self.0.method_hash(#selector, #contract_args)
+            #[doc = #doc_str]
+            pub fn #function_name(&self #function_params) -> #ethers_contract::builders::ContractCall<M, #outputs> {
+                self.0.method_hash(#selector_tokens, #contract_args)
                     .expect("method not found (this should never happen)")
             }
         })
@@ -470,9 +369,10 @@ impl Context {
     ///
     /// In case of overloaded functions we would follow rust's general
     /// convention of suffixing the function name with _with
-    // The first function or the function with the least amount of arguments should
-    // be named as in the ABI, the following functions suffixed with _with_ +
-    // additional_params[0].name + (_and_(additional_params[1+i].name))*
+    ///
+    /// The first function or the function with the least amount of arguments should
+    /// be named as in the ABI, the following functions suffixed with _with_ +
+    /// additional_params[0].name + (_and_(additional_params[1+i].name))*
     fn get_method_aliases(&self) -> Result<BTreeMap<String, MethodAlias>> {
         let mut aliases = self.method_aliases.clone();
 
@@ -674,7 +574,7 @@ impl Context {
 
 fn expand_selector(selector: Selector) -> TokenStream {
     let bytes = selector.iter().copied().map(Literal::u8_unsuffixed);
-    quote! { [#( #bytes ),*] }
+    quote!([ #( #bytes ),* ])
 }
 
 /// Represents the aliases to use when generating method related elements
@@ -846,31 +746,28 @@ mod tests {
     }
 
     #[test]
-    fn expand_inputs_() {
+    fn test_expand_inputs() {
         assert_quote!(
-            expand_inputs(
-
-                &[
-                    Param {
-                        name: "a".to_string(),
-                        kind: ParamType::Bool,
-                        internal_type: None,
-                    },
-                    Param {
-                        name: "b".to_string(),
-                        kind: ParamType::Address,
-                        internal_type: None,
-                    },
-                ],
-            )
+            expand_inputs(&[
+                Param {
+                    name: "a".to_string(),
+                    kind: ParamType::Bool,
+                    internal_type: None,
+                },
+                Param {
+                    name: "b".to_string(),
+                    kind: ParamType::Address,
+                    internal_type: None,
+                },
+            ])
             .unwrap(),
-            { , a: bool, b: ethers_core::types::Address },
+            { , a: bool, b: ::ethers_core::types::Address },
         );
     }
 
     #[test]
     fn expand_fn_outputs_empty() {
-        assert_quote!(expand_fn_outputs(&[],).unwrap(), { () });
+        assert_quote!(expand_fn_outputs(&[]).unwrap(), { () });
     }
 
     #[test]
@@ -892,9 +789,9 @@ mod tests {
             expand_fn_outputs(&[
                 Param { name: "a".to_string(), kind: ParamType::Bool, internal_type: None },
                 Param { name: "b".to_string(), kind: ParamType::Address, internal_type: None },
-            ],)
+            ])
             .unwrap(),
-            { (bool, ethers_core::types::Address) },
+            { (bool, ::ethers_core::types::Address) },
         );
     }
 }

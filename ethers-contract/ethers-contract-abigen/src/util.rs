@@ -1,40 +1,44 @@
-use ethers_core::{
-    abi::{Param, ParamType},
-    types::Address,
+use crate::InternalStructs;
+use ethers_core::abi::{
+    struct_def::{FieldType, StructFieldType},
+    ParamType, SolStruct,
 };
 use eyre::Result;
 use inflector::Inflector;
-use proc_macro2::{Ident, Literal, Span, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
-use std::path::PathBuf;
-use syn::{Ident as SynIdent, Path};
+use std::path::{Path, PathBuf};
 
-/// Expands a identifier string into a token.
-pub fn ident(name: &str) -> Ident {
+/// Creates a new Ident with the given string at [`Span::call_site`].
+///
+/// # Panics
+///
+/// If the input string is neither a keyword nor a legal variable name.
+pub(crate) fn ident(name: &str) -> Ident {
     Ident::new(name, Span::call_site())
 }
 
-/// Expands an identifier string into a token and appending `_` if the
-/// identifier is for a reserved keyword.
+/// Expands an identifier string into a token and appending `_` if the identifier is for a reserved
+/// keyword.
 ///
 /// Parsing keywords like `self` can fail, in this case we add an underscore.
-pub fn safe_ident(name: &str) -> Ident {
-    syn::parse_str::<SynIdent>(name).unwrap_or_else(|_| ident(&format!("{name}_")))
+pub(crate) fn safe_ident(name: &str) -> Ident {
+    syn::parse_str::<Ident>(name).unwrap_or_else(|_| ident(&format!("{name}_")))
 }
 
 ///  Converts a `&str` to `snake_case` `String` while respecting identifier rules
-pub fn safe_snake_case(ident: &str) -> String {
+pub(crate) fn safe_snake_case(ident: &str) -> String {
     safe_identifier_name(ident.to_snake_case())
 }
 
 ///  Converts a `&str` to `PascalCase` `String` while respecting identifier rules
-pub fn safe_pascal_case(ident: &str) -> String {
+pub(crate) fn safe_pascal_case(ident: &str) -> String {
     safe_identifier_name(ident.to_pascal_case())
 }
 
 /// respects identifier rules, such as, an identifier must not start with a numeric char
-fn safe_identifier_name(name: String) -> String {
-    if name.starts_with(|c: char| c.is_numeric()) {
+pub(crate) fn safe_identifier_name(name: String) -> String {
+    if name.starts_with(char::is_numeric) {
         format!("_{name}")
     } else {
         name
@@ -42,39 +46,46 @@ fn safe_identifier_name(name: String) -> String {
 }
 
 /// converts invalid rust module names to valid ones
-pub fn safe_module_name(name: &str) -> String {
+pub(crate) fn safe_module_name(name: &str) -> String {
     // handle reserve words used in contracts (eg Enum is a gnosis contract)
     safe_ident(&safe_snake_case(name)).to_string()
 }
 
 /// Expands an identifier as snakecase and preserve any leading or trailing underscores
-pub fn safe_snake_case_ident(name: &str) -> Ident {
+pub(crate) fn safe_snake_case_ident(name: &str) -> Ident {
     let i = name.to_snake_case();
     ident(&preserve_underscore_delim(&i, name))
 }
 
 /// Expands an identifier as pascal case and preserve any leading or trailing underscores
-pub fn safe_pascal_case_ident(name: &str) -> Ident {
+pub(crate) fn safe_pascal_case_ident(name: &str) -> Ident {
     let i = name.to_pascal_case();
     ident(&preserve_underscore_delim(&i, name))
 }
 
 /// Reapplies leading and trailing underscore chars to the ident
-/// Example `ident = "pascalCase"; alias = __pascalcase__` -> `__pascalCase__`
-pub fn preserve_underscore_delim(ident: &str, alias: &str) -> String {
-    alias
-        .chars()
-        .take_while(|c| *c == '_')
-        .chain(ident.chars())
-        .chain(alias.chars().rev().take_while(|c| *c == '_'))
-        .collect()
+///
+/// # Example
+///
+/// ```ignore
+/// # use ethers_contract_abigen::util::preserve_underscore_delim;
+/// assert_eq!(
+///   preserve_underscore_delim("pascalCase", "__pascalcase__"),
+///   "__pascalCase__"
+/// );
+/// ```
+pub(crate) fn preserve_underscore_delim(ident: &str, original: &str) -> String {
+    let is_underscore = |c: &char| *c == '_';
+    let pre = original.chars().take_while(is_underscore);
+    let post = original.chars().rev().take_while(is_underscore);
+    pre.chain(ident.chars()).chain(post).collect()
 }
 
 /// Expands a positional identifier string that may be empty.
 ///
 /// Note that this expands the parameter name with `safe_ident`, meaning that
 /// identifiers that are reserved keywords get `_` appended to them.
-pub fn expand_input_name(index: usize, name: &str) -> TokenStream {
+pub(crate) fn expand_input_name(index: usize, name: &str) -> TokenStream {
     let name_str = match name {
         "" => format!("p{index}"),
         n => n.to_snake_case(),
@@ -84,42 +95,14 @@ pub fn expand_input_name(index: usize, name: &str) -> TokenStream {
     quote! { #name }
 }
 
-/// Expands a doc string into an attribute token stream.
-pub fn expand_doc(s: &str) -> TokenStream {
-    let doc = Literal::string(s);
-    quote! {
-        #[doc = #doc]
-    }
-}
-
-pub fn expand_derives(derives: &[Path]) -> TokenStream {
-    quote! {#(#derives),*}
-}
-
-/// Parses the given address string
-pub fn parse_address<S>(address_str: S) -> Result<Address>
-where
-    S: AsRef<str>,
-{
-    let address_str = address_str.as_ref();
-    eyre::ensure!(address_str.starts_with("0x"), "address must start with '0x'");
-    Ok(address_str[2..].parse()?)
-}
-
-/// Perform an HTTP GET request and return the contents of the response.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn http_get(_url: &str) -> Result<String> {
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "reqwest")]{
-            Ok(reqwest::blocking::get(_url)?.text()?)
-        } else {
-            eyre::bail!("HTTP is unsupported")
-        }
-    }
+/// Perform a blocking HTTP GET request and return the contents of the response as a String.
+#[cfg(all(feature = "online", not(target_arch = "wasm32")))]
+pub(crate) fn http_get(url: impl reqwest::IntoUrl) -> Result<String> {
+    Ok(reqwest::blocking::get(url)?.text()?)
 }
 
 /// Replaces any occurrences of env vars in the `raw` str with their value
-pub fn resolve_path(raw: &str) -> Result<PathBuf> {
+pub(crate) fn resolve_path(raw: &str) -> Result<PathBuf> {
     let mut unprocessed = raw;
     let mut resolved = String::new();
 
@@ -134,7 +117,7 @@ pub fn resolve_path(raw: &str) -> Result<PathBuf> {
                 unprocessed = rest;
             }
             None => {
-                eyre::bail!("Unable to parse a variable from \"{}\"", tail)
+                eyre::bail!("Unable to parse a variable from \"{tail}\"")
             }
         }
     }
@@ -176,7 +159,7 @@ fn take_while(s: &str, mut predicate: impl FnMut(char) -> bool) -> (&str, &str) 
 }
 
 /// Returns a list of absolute paths to all the json files under the root
-pub fn json_files(root: impl AsRef<std::path::Path>) -> Vec<PathBuf> {
+pub(crate) fn json_files(root: impl AsRef<Path>) -> Vec<PathBuf> {
     walkdir::WalkDir::new(root)
         .into_iter()
         .filter_map(Result::ok)
@@ -186,27 +169,175 @@ pub fn json_files(root: impl AsRef<std::path::Path>) -> Vec<PathBuf> {
         .collect()
 }
 
-/// rust-std derives `Default` automatically only for arrays len <= 32
+/// Returns whether all the given parameters can derive the builtin traits.
 ///
-/// Returns whether the corresponding struct can derive `Default`
-pub fn can_derive_defaults(params: &[Param]) -> bool {
-    params.iter().map(|param| &param.kind).all(can_derive_default)
+/// The following traits are only implemented on tuples of arity 12 or less:
+///
+/// - [PartialEq](https://doc.rust-lang.org/stable/std/cmp/trait.PartialEq.html)
+/// - [Eq](https://doc.rust-lang.org/stable/std/cmp/trait.Eq.html)
+/// - [PartialOrd](https://doc.rust-lang.org/stable/std/cmp/trait.PartialOrd.html)
+/// - [Ord](https://doc.rust-lang.org/stable/std/cmp/trait.Ord.html)
+/// - [Debug](https://doc.rust-lang.org/stable/std/fmt/trait.Debug.html)
+/// - [Default](https://doc.rust-lang.org/stable/std/default/trait.Default.html)
+/// - [Hash](https://doc.rust-lang.org/stable/std/hash/trait.Hash.html)
+///
+/// while the `Default` trait is only implemented on arrays of length 32 or less.
+///
+/// Tuple reference: <https://doc.rust-lang.org/stable/std/primitive.tuple.html#trait-implementations-1>
+///
+/// Array reference: <https://doc.rust-lang.org/stable/std/primitive.array.html>
+///
+/// `derive_default` should be set to false when calling this for enums.
+pub(crate) fn derive_builtin_traits<'a>(
+    params: impl IntoIterator<Item = &'a ParamType>,
+    stream: &mut TokenStream,
+    mut derive_default: bool,
+    mut derive_others: bool,
+) {
+    for param in params {
+        derive_default &= can_derive_default(param);
+        derive_others &= can_derive_builtin_traits(param);
+    }
+    extend_derives(stream, derive_default, derive_others);
 }
 
-pub fn can_derive_default(param: &ParamType) -> bool {
-    const MAX_SUPPORTED_LEN: usize = 32;
+/// This has to be a seperate function since a sol struct is converted into a tuple, but for
+/// deriving purposes it shouldn't count as one, so we recurse back the struct fields.
+pub(crate) fn derive_builtin_traits_struct(
+    structs: &InternalStructs,
+    sol_struct: &SolStruct,
+    params: &[ParamType],
+    stream: &mut TokenStream,
+) {
+    if sol_struct.fields().iter().any(|field| field.ty.is_struct()) {
+        let mut def = true;
+        let mut others = true;
+        _derive_builtin_traits_struct(structs, sol_struct, params, &mut def, &mut others);
+        extend_derives(stream, def, others);
+    } else {
+        derive_builtin_traits(params, stream, true, true);
+    }
+}
+
+fn _derive_builtin_traits_struct(
+    structs: &InternalStructs,
+    sol_struct: &SolStruct,
+    params: &[ParamType],
+    def: &mut bool,
+    others: &mut bool,
+) {
+    let fields = sol_struct.fields();
+    debug_assert_eq!(fields.len(), params.len());
+
+    for (field, ty) in fields.iter().zip(params) {
+        match &field.ty {
+            FieldType::Struct(s_ty) => {
+                // a tuple here is actually a sol struct so we skip it
+                if !matches!(ty, ParamType::Tuple(_)) {
+                    *def &= can_derive_default(ty);
+                    *others &= can_derive_builtin_traits(ty);
+                }
+                let id = s_ty.identifier();
+                // TODO: InternalStructs does not contain this field's ID if the struct and field
+                // are in 2 different modules, like in `can_generate_internal_structs_multiple`
+                if let Some(recursed_struct) = structs.structs.get(&id) {
+                    let recursed_params = get_struct_params(s_ty, ty);
+                    _derive_builtin_traits_struct(
+                        structs,
+                        recursed_struct,
+                        recursed_params,
+                        def,
+                        others,
+                    );
+                }
+            }
+
+            FieldType::Elementary(ty1) => {
+                debug_assert_eq!(ty, ty1);
+                *def &= can_derive_default(ty);
+                *others &= can_derive_builtin_traits(ty);
+            }
+
+            FieldType::Mapping(_) => unreachable!(),
+        }
+    }
+}
+
+fn get_struct_params<'a>(s_ty: &StructFieldType, ty: &'a ParamType) -> &'a [ParamType] {
+    match (s_ty, ty) {
+        (StructFieldType::Type(_), ParamType::Tuple(params)) => params,
+        (StructFieldType::Array(s_ty), ParamType::Array(ty)) => get_struct_params(s_ty, ty),
+        (StructFieldType::FixedArray(s_ty, _), ParamType::FixedArray(ty, _)) => {
+            get_struct_params(s_ty, ty)
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn extend_derives(stream: &mut TokenStream, def: bool, others: bool) {
+    if def {
+        stream.extend(quote!(Default,))
+    }
+    if others {
+        stream.extend(quote!(Debug, PartialEq, Eq, Hash))
+    }
+}
+
+const MAX_SUPPORTED_ARRAY_LEN: usize = 32;
+const MAX_SUPPORTED_TUPLE_LEN: usize = 12;
+
+/// Whether the given type can derive the `Default` trait.
+fn can_derive_default(param: &ParamType) -> bool {
     match param {
-        ParamType::FixedBytes(len) => *len <= MAX_SUPPORTED_LEN,
+        ParamType::Array(ty) => can_derive_default(ty),
+        ParamType::FixedBytes(len) => *len <= MAX_SUPPORTED_ARRAY_LEN,
         ParamType::FixedArray(ty, len) => {
-            if *len > MAX_SUPPORTED_LEN {
+            if *len > MAX_SUPPORTED_ARRAY_LEN {
                 false
             } else {
                 can_derive_default(ty)
             }
         }
-        ParamType::Tuple(params) => params.iter().all(can_derive_default),
+        ParamType::Tuple(params) => {
+            if params.len() > MAX_SUPPORTED_TUPLE_LEN {
+                false
+            } else {
+                params.iter().all(can_derive_default)
+            }
+        }
         _ => true,
     }
+}
+
+/// Whether the given type can derive the builtin traits listed in [`derive_builtin_traits`], minus
+/// `Default`.
+fn can_derive_builtin_traits(param: &ParamType) -> bool {
+    match param {
+        ParamType::Array(ty) | ParamType::FixedArray(ty, _) => can_derive_builtin_traits(ty),
+        ParamType::Tuple(params) => {
+            if params.len() > MAX_SUPPORTED_TUPLE_LEN {
+                false
+            } else {
+                params.iter().all(can_derive_builtin_traits)
+            }
+        }
+        _ => true,
+    }
+}
+
+/// Returns the formatted Solidity ABI signature.
+pub(crate) fn abi_signature<'a, N, T>(name: N, types: T) -> String
+where
+    N: std::fmt::Display,
+    T: IntoIterator<Item = &'a ParamType>,
+{
+    let types = abi_signature_types(types);
+    format!("`{name}({types})`")
+}
+
+/// Returns the Solidity stringified ABI types joined by a single comma.
+pub(crate) fn abi_signature_types<'a, T: IntoIterator<Item = &'a ParamType>>(types: T) -> String {
+    types.into_iter().map(ToString::to_string).collect::<Vec<_>>().join(",")
 }
 
 #[cfg(test)]
@@ -214,12 +345,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn can_detect_non_default() {
-        let param = ParamType::FixedArray(Box::new(ParamType::Uint(64)), 128);
-        assert!(!can_derive_default(&param));
-
-        let param = ParamType::FixedArray(Box::new(ParamType::Uint(64)), 32);
+    fn can_detect_derives() {
+        // array
+        let param = ParamType::FixedArray(Box::new(ParamType::Uint(256)), 32);
         assert!(can_derive_default(&param));
+        assert!(can_derive_builtin_traits(&param));
+
+        let param = ParamType::FixedArray(Box::new(ParamType::Uint(256)), 33);
+        assert!(!can_derive_default(&param));
+        assert!(can_derive_builtin_traits(&param));
+
+        // tuple
+        let param = ParamType::Tuple(vec![ParamType::Uint(256); 12]);
+        assert!(can_derive_default(&param));
+        assert!(can_derive_builtin_traits(&param));
+
+        let param = ParamType::Tuple(vec![ParamType::Uint(256); 13]);
+        assert!(!can_derive_default(&param));
+        assert!(!can_derive_builtin_traits(&param));
     }
 
     #[test]
@@ -243,23 +386,6 @@ mod tests {
     #[test]
     fn input_name_to_ident_snake_case() {
         assert_quote!(expand_input_name(0, "CamelCase1"), { camel_case_1 });
-    }
-
-    #[test]
-    fn parse_address_missing_prefix() {
-        let _ = parse_address("0000000000000000000000000000000000000000").unwrap_err();
-    }
-
-    #[test]
-    fn parse_address_address_too_short() {
-        let _ = parse_address("0x00000000000000").unwrap_err();
-    }
-
-    #[test]
-    fn parse_address_ok() {
-        let expected =
-            Address::from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
-        assert_eq!(parse_address("0x000102030405060708090a0b0c0d0e0f10111213").unwrap(), expected);
     }
 
     #[test]

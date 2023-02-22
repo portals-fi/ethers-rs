@@ -1,5 +1,5 @@
-#![deny(missing_docs)]
-mod common;
+//! Contains types to generate Rust bindings for Solidity contracts.
+
 mod errors;
 mod events;
 mod methods;
@@ -15,7 +15,7 @@ use ethers_core::{
 };
 use eyre::{eyre, Context as _, Result};
 use proc_macro2::{Ident, Literal, TokenStream};
-use quote::quote;
+use quote::{format_ident, quote};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use syn::Path;
@@ -51,11 +51,20 @@ impl ExpandedContract {
             abi_structs,
             errors,
         } = self;
+
         quote! {
-           // export all the created data types
             pub use #module::*;
 
-            #[allow(clippy::too_many_arguments, non_camel_case_types)]
+            /// This module was auto-generated with ethers-rs Abigen.
+            /// More information at: <https://github.com/gakonst/ethers-rs>
+            #[allow(
+                clippy::enum_variant_names,
+                clippy::too_many_arguments,
+                clippy::upper_case_acronyms,
+                clippy::type_complexity,
+                dead_code,
+                non_camel_case_types,
+            )]
             pub mod #module {
                 #imports
                 #contract
@@ -98,13 +107,16 @@ pub struct Context {
     error_aliases: BTreeMap<String, Ident>,
 
     /// Derives added to event structs and enums.
-    event_derives: Vec<Path>,
+    extra_derives: Vec<Path>,
 
     /// Manually specified event aliases.
     event_aliases: BTreeMap<String, Ident>,
 
     /// Bytecode extracted from the abi string input, if present.
     contract_bytecode: Option<Bytes>,
+
+    /// Deployed bytecode extracted from the abi string input, if present.
+    contract_deployed_bytecode: Option<Bytes>,
 }
 
 impl Context {
@@ -114,11 +126,8 @@ impl Context {
         let name_mod = util::ident(&util::safe_module_name(&self.contract_name));
         let abi_name = self.inline_abi_ident();
 
-        // 0. Imports
-        let imports = common::imports(&name.to_string());
-
         // 1. Declare Contract struct
-        let struct_decl = common::struct_declaration(self);
+        let struct_decl = self.struct_declaration();
 
         // 2. Declare events structs & impl FromTokens for each event
         let events_decl = self.events_declaration()?;
@@ -129,7 +138,7 @@ impl Context {
         // 4. impl block for the contract methods and their corresponding types
         let (contract_methods, call_structs) = self.methods_and_call_structs()?;
 
-        // 5. generate deploy function if
+        // 5. The deploy method, only if the contract has a bytecode object
         let deployment_methods = self.deployment_methods();
 
         // 6. Declare the structs parsed from the human readable abi
@@ -146,11 +155,10 @@ impl Context {
                 #struct_decl
 
                 impl<M: #ethers_providers::Middleware> #name<M> {
-                    /// Creates a new contract instance with the specified `ethers`
-                    /// client at the given `Address`. The contract derefs to a `ethers::Contract`
-                    /// object
+                    /// Creates a new contract instance with the specified `ethers` client at
+                    /// `address`. The contract derefs to a `ethers::Contract` object.
                     pub fn new<T: Into<#ethers_core::types::Address>>(address: T, client: ::std::sync::Arc<M>) -> Self {
-                        #ethers_contract::Contract::new(address.into(), #abi_name.clone(), client).into()
+                        Self(#ethers_contract::Contract::new(address.into(), #abi_name.clone(), client))
                     }
 
                     #deployment_methods
@@ -158,19 +166,18 @@ impl Context {
                     #contract_methods
 
                     #contract_events
-
                 }
 
-                impl<M : #ethers_providers::Middleware> From<#ethers_contract::Contract<M>> for #name<M> {
+                impl<M: #ethers_providers::Middleware> From<#ethers_contract::Contract<M>> for #name<M> {
                     fn from(contract: #ethers_contract::Contract<M>) -> Self {
-                       Self(contract)
+                        Self::new(contract.address(), contract.client())
                     }
                 }
         };
 
         Ok(ExpandedContract {
             module: name_mod,
-            imports,
+            imports: quote!(),
             contract,
             events: events_decl,
             errors: errors_decl,
@@ -183,10 +190,13 @@ impl Context {
     pub fn from_abigen(args: Abigen) -> Result<Self> {
         // get the actual ABI string
         let mut abi_str =
-            args.abi_source.get().map_err(|e| eyre!("failed to get ABI JSON: {}", e))?;
+            args.abi_source.get().map_err(|e| eyre!("failed to get ABI JSON: {e}"))?;
 
         // holds the bytecode parsed from the abi_str, if present
         let mut contract_bytecode = None;
+
+        // holds the deployed bytecode parsed from the abi_str, if present
+        let mut contract_deployed_bytecode = None;
 
         let (abi, human_readable, abi_parser) = parse_abi(&abi_str).wrap_err_with(|| {
             eyre::eyre!("error parsing abi for contract: {}", args.contract_name)
@@ -215,6 +225,7 @@ impl Context {
                     // part of the json object in the contract binding
                     abi_str = serde_json::to_string(&obj.abi)?;
                     contract_bytecode = obj.bytecode;
+                    contract_deployed_bytecode = obj.deployed_bytecode;
                     InternalStructs::new(obj.abi)
                 }
                 JsonAbi::Array(abi) => InternalStructs::new(abi),
@@ -234,7 +245,7 @@ impl Context {
             };
 
             if method_aliases.insert(signature.clone(), alias).is_some() {
-                eyre::bail!("duplicate method signature '{}' in method aliases", signature)
+                eyre::bail!("duplicate method signature {signature:?} in method aliases")
             }
         }
 
@@ -270,12 +281,12 @@ impl Context {
             );
         }
 
-        let event_derives = args
-            .event_derives
+        let extra_derives = args
+            .derives
             .iter()
             .map(|derive| syn::parse_str::<Path>(derive))
             .collect::<Result<Vec<_>, _>>()
-            .context("failed to parse event derives")?;
+            .wrap_err("failed to parse event derives")?;
 
         Ok(Context {
             abi,
@@ -286,36 +297,152 @@ impl Context {
             contract_ident,
             contract_name: args.contract_name,
             contract_bytecode,
+            contract_deployed_bytecode,
             method_aliases,
             error_aliases: Default::default(),
-            event_derives,
+            extra_derives,
             event_aliases,
         })
     }
 
-    /// The initial name fo the contract
+    /// The name of the contract.
     pub(crate) fn contract_name(&self) -> &str {
         &self.contract_name
     }
 
-    /// name of the `Lazy` that stores the ABI
+    /// Name of the `Lazy` that stores the ABI.
     pub(crate) fn inline_abi_ident(&self) -> Ident {
-        util::safe_ident(&format!("{}_ABI", self.contract_ident.to_string().to_uppercase()))
+        format_ident!("{}_ABI", self.contract_name.to_uppercase())
     }
 
-    /// name of the `Lazy` that stores the Bytecode
+    /// Name of the `Lazy` that stores the Bytecode.
     pub(crate) fn inline_bytecode_ident(&self) -> Ident {
-        util::safe_ident(&format!("{}_BYTECODE", self.contract_ident.to_string().to_uppercase()))
+        format_ident!("{}_BYTECODE", self.contract_name.to_uppercase())
     }
 
-    /// The internal abi struct mapping table
+    /// Name of the `Lazy` that stores the Deployed Bytecode.
+    pub(crate) fn inline_deployed_bytecode_ident(&self) -> Ident {
+        format_ident!("{}_DEPLOYED_BYTECODE", self.contract_name.to_uppercase())
+    }
+
+    /// Returns a reference to the internal ABI struct mapping table.
     pub fn internal_structs(&self) -> &InternalStructs {
         &self.internal_structs
     }
 
-    /// The internal mutable abi struct mapping table
+    /// Returns a mutable reference to the internal ABI struct mapping table.
     pub fn internal_structs_mut(&mut self) -> &mut InternalStructs {
         &mut self.internal_structs
+    }
+
+    /// Expands `self.extra_derives` into a comma separated list to be inserted in a
+    /// `#[derive(...)]` attribute.
+    pub(crate) fn expand_extra_derives(&self) -> TokenStream {
+        let extra_derives = &self.extra_derives;
+        quote!(#( #extra_derives, )*)
+    }
+
+    /// Generates the token stream for the contract's ABI, bytecode and struct declarations.
+    pub(crate) fn struct_declaration(&self) -> TokenStream {
+        let name = &self.contract_ident;
+
+        let ethers_core = ethers_core_crate();
+        let ethers_contract = ethers_contract_crate();
+
+        let abi = {
+            let abi_name = self.inline_abi_ident();
+            let abi = &self.abi_str;
+            let (doc_str, parse) = if self.human_readable {
+                // Human readable: use abi::parse_abi_str
+                let doc_str = "The parsed human-readable ABI of the contract.";
+                let parse = quote!(#ethers_core::abi::parse_abi_str(__ABI));
+                (doc_str, parse)
+            } else {
+                // JSON ABI: use serde_json::from_str
+                let doc_str = "The parsed JSON ABI of the contract.";
+                let parse = quote!(#ethers_core::utils::__serde_json::from_str(__ABI));
+                (doc_str, parse)
+            };
+
+            quote! {
+                #[rustfmt::skip]
+                const __ABI: &str = #abi;
+
+                // This never fails as we are parsing the ABI in this macro
+                #[doc = #doc_str]
+                pub static #abi_name: #ethers_contract::Lazy<#ethers_core::abi::Abi> =
+                    #ethers_contract::Lazy::new(|| #parse.expect("ABI is always valid"));
+            }
+        };
+
+        let bytecode = self.contract_bytecode.as_ref().map(|bytecode| {
+        let bytecode = bytecode.iter().copied().map(Literal::u8_unsuffixed);
+            let bytecode_name = self.inline_bytecode_ident();
+            quote! {
+                #[rustfmt::skip]
+                const __BYTECODE: &[u8] = &[ #( #bytecode ),* ];
+
+                #[doc = "The bytecode of the contract."]
+                pub static #bytecode_name: #ethers_core::types::Bytes = #ethers_core::types::Bytes::from_static(__BYTECODE);
+            }
+        });
+
+        let deployed_bytecode = self.contract_deployed_bytecode.as_ref().map(|bytecode| {
+            let bytecode = bytecode.iter().copied().map(Literal::u8_unsuffixed);
+            let bytecode_name = self.inline_deployed_bytecode_ident();
+            quote! {
+                #[rustfmt::skip]
+                const __DEPLOYED_BYTECODE: &[u8] = &[ #( #bytecode ),* ];
+
+                #[doc = "The deployed bytecode of the contract."]
+                pub static #bytecode_name: #ethers_core::types::Bytes = #ethers_core::types::Bytes::from_static(__DEPLOYED_BYTECODE);
+            }
+        });
+
+        quote! {
+            // The `Lazy` ABI
+            #abi
+
+            // The static Bytecode, if present
+            #bytecode
+
+            // The static deployed Bytecode, if present
+            #deployed_bytecode
+
+            // Struct declaration
+            pub struct #name<M>(#ethers_contract::Contract<M>);
+
+            // Manual implementation since `M` is stored in `Arc<M>` and does not need to be `Clone`
+            impl<M> ::core::clone::Clone for #name<M> {
+                fn clone(&self) -> Self {
+                    Self(::core::clone::Clone::clone(&self.0))
+                }
+            }
+
+            // Deref to the inner contract to have access to all its methods
+            impl<M> ::core::ops::Deref for #name<M> {
+                type Target = #ethers_contract::Contract<M>;
+
+                fn deref(&self) -> &Self::Target {
+                    &self.0
+                }
+            }
+
+            impl<M> ::core::ops::DerefMut for #name<M> {
+                fn deref_mut(&mut self) -> &mut Self::Target {
+                    &mut self.0
+                }
+            }
+
+            // `<name>(<address>)`
+            impl<M> ::core::fmt::Debug for #name<M> {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_tuple(stringify!(#name))
+                        .field(&self.address())
+                        .finish()
+                }
+            }
+        }
     }
 }
 

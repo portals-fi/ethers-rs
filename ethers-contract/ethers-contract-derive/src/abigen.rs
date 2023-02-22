@@ -1,39 +1,39 @@
-//! Implementation of procedural macro for generating type-safe bindings to an
-//! ethereum smart contract.
+//! Implementation of procedural macro for generating type-safe bindings to an Ethereum smart
+//! contract.
+
 use crate::spanned::{ParseInner, Spanned};
-
-use ethers_contract_abigen::Abigen;
-use ethers_core::abi::{Function, FunctionExt, Param, StateMutability};
-
 use ethers_contract_abigen::{
     contract::{Context, ExpandedContract},
     multi::MultiExpansion,
+    Abigen,
 };
+use ethers_core::abi::{Function, FunctionExt, Param, StateMutability};
+use eyre::Result;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::ToTokens;
-use std::{collections::HashSet, error::Error};
+use std::collections::HashSet;
 use syn::{
     braced,
     ext::IdentExt,
     parenthesized,
-    parse::{Error as ParseError, Parse, ParseStream, Result as ParseResult},
+    parse::{Error, Parse, ParseStream, Result as ParseResult},
     Ident, LitStr, Path, Token,
 };
 
 /// A series of `ContractArgs` separated by `;`
-#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, Debug)]
 pub(crate) struct Contracts {
-    inner: Vec<(Span, ContractArgs)>,
+    pub(crate) inner: Vec<(Span, ContractArgs)>,
 }
 
 impl Contracts {
-    pub(crate) fn expand(self) -> ::std::result::Result<TokenStream2, syn::Error> {
+    pub(crate) fn expand(self) -> Result<TokenStream2, Error> {
         let mut expansions = Vec::with_capacity(self.inner.len());
 
         // expand all contracts
         for (span, contract) in self.inner {
-            let contract = Self::expand_contract(contract)
-                .map_err(|err| syn::Error::new(span, err.to_string()))?;
+            let contract =
+                Self::expand_contract(contract).map_err(|err| Error::new(span, err.to_string()))?;
             expansions.push(contract);
         }
 
@@ -41,10 +41,8 @@ impl Contracts {
         Ok(MultiExpansion::new(expansions).expand_inplace())
     }
 
-    fn expand_contract(
-        contract: ContractArgs,
-    ) -> Result<(ExpandedContract, Context), Box<dyn Error>> {
-        Ok(contract.into_builder()?.expand()?)
+    fn expand_contract(contract: ContractArgs) -> Result<(ExpandedContract, Context)> {
+        contract.into_builder()?.expand()
     }
 }
 
@@ -59,7 +57,7 @@ impl Parse for Contracts {
 }
 
 /// Contract procedural macro arguments.
-#[cfg_attr(test, derive(Debug, Eq, PartialEq))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ContractArgs {
     name: String,
     abi: String,
@@ -67,7 +65,7 @@ pub(crate) struct ContractArgs {
 }
 
 impl ContractArgs {
-    fn into_builder(self) -> Result<Abigen, Box<dyn Error>> {
+    fn into_builder(self) -> Result<Abigen> {
         let mut builder = Abigen::new(&self.name, &self.abi)?;
 
         for parameter in self.parameters.into_iter() {
@@ -75,9 +73,9 @@ impl ContractArgs {
                 Parameter::Methods(methods) => methods
                     .into_iter()
                     .fold(builder, |builder, m| builder.add_method_alias(m.signature, m.alias)),
-                Parameter::EventDerives(derives) => derives
-                    .into_iter()
-                    .fold(builder, |builder, derive| builder.add_event_derive(derive)),
+                Parameter::Derives(derives) => {
+                    derives.into_iter().fold(builder, |builder, derive| builder.add_derive(derive))
+                }
             };
         }
 
@@ -130,10 +128,10 @@ impl ParseInner for ContractArgs {
 }
 
 /// A single procedural macro parameter.
-#[cfg_attr(test, derive(Debug, Eq, PartialEq))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Parameter {
     Methods(Vec<Method>),
-    EventDerives(Vec<String>),
+    Derives(Vec<String>),
 }
 
 impl Parse for Parameter {
@@ -152,13 +150,13 @@ impl Parse for Parameter {
                     let mut aliases = HashSet::new();
                     for method in parsed {
                         if !signatures.insert(method.signature.clone()) {
-                            return Err(ParseError::new(
+                            return Err(Error::new(
                                 method.span(),
                                 "duplicate method signature in `abigen!` macro invocation",
                             ))
                         }
                         if !aliases.insert(method.alias.clone()) {
-                            return Err(ParseError::new(
+                            return Err(Error::new(
                                 method.span(),
                                 "duplicate method alias in `abigen!` macro invocation",
                             ))
@@ -171,7 +169,7 @@ impl Parse for Parameter {
 
                 Parameter::Methods(methods)
             }
-            "event_derives" => {
+            "derives" | "event_derives" => {
                 let content;
                 parenthesized!(content in input);
                 let derives = content
@@ -179,13 +177,10 @@ impl Parse for Parameter {
                     .into_iter()
                     .map(|path| path.to_token_stream().to_string())
                     .collect();
-                Parameter::EventDerives(derives)
+                Parameter::Derives(derives)
             }
             _ => {
-                return Err(ParseError::new(
-                    name.span(),
-                    format!("unexpected named parameter `{name}`"),
-                ))
+                return Err(Error::new(name.span(), format!("unexpected named parameter `{name}`")))
             }
         };
 
@@ -194,7 +189,7 @@ impl Parse for Parameter {
 }
 
 /// An explicitely named contract method.
-#[cfg_attr(test, derive(Debug, Eq, PartialEq))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Method {
     signature: String,
     alias: String,
@@ -212,7 +207,7 @@ impl Parse for Method {
                 .iter()
                 .map(|ident| {
                     let kind = serde_json::from_value(serde_json::json!(&ident.to_string()))
-                        .map_err(|err| ParseError::new(ident.span(), err))?;
+                        .map_err(|err| Error::new(ident.span(), err))?;
                     Ok(Param { name: "".into(), kind, internal_type: None })
                 })
                 .collect::<ParseResult<Vec<_>>>()?;
@@ -295,7 +290,7 @@ mod tests {
                 ContractArgs {
                     name: "TestContract".to_string(),
                     abi: "path/to/abi.json".to_string(),
-                    parameters: vec![Parameter::EventDerives(vec![
+                    parameters: vec![Parameter::Derives(vec![
                         "serde :: Deserialize".into(),
                         "serde :: Serialize".into(),
                     ])],
@@ -303,7 +298,7 @@ mod tests {
                 ContractArgs {
                     name: "TestContract2".to_string(),
                     abi: "other.json".to_string(),
-                    parameters: vec![Parameter::EventDerives(vec![
+                    parameters: vec![Parameter::Derives(vec![
                         "serde :: Deserialize".into(),
                         "serde :: Serialize".into(),
                     ])],
@@ -341,7 +336,7 @@ mod tests {
                 ContractArgs {
                     name: "TestContract2".to_string(),
                     abi: "other.json".to_string(),
-                    parameters: vec![Parameter::EventDerives(vec![
+                    parameters: vec![Parameter::Derives(vec![
                         "serde :: Deserialize".into(),
                         "serde :: Serialize".into(),
                     ])],
@@ -372,7 +367,7 @@ mod tests {
                 ContractArgs {
                     name: "TestContract2".to_string(),
                     abi: "other.json".to_string(),
-                    parameters: vec![Parameter::EventDerives(vec![
+                    parameters: vec![Parameter::Derives(vec![
                         "serde :: Deserialize".into(),
                         "serde :: Serialize".into(),
                     ])],
@@ -423,7 +418,7 @@ mod tests {
                         method("myMethod(uint256,bool)", "my_renamed_method"),
                         method("myOtherMethod()", "my_other_renamed_method"),
                     ]),
-                    Parameter::EventDerives(vec![
+                    Parameter::Derives(vec![
                         "Asdf".into(),
                         "a :: B".into(),
                         "a :: b :: c :: D".into()

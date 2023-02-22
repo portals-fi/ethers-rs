@@ -5,7 +5,7 @@ use inflector::Inflector;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -139,11 +139,8 @@ impl MultiAbigen {
 
     /// Build the contract bindings and prepare for writing
     pub fn build(self) -> Result<MultiBindings> {
-        let rustfmt = self.abigens.iter().any(|gen| gen.rustfmt);
-        Ok(MultiBindings {
-            expansion: MultiExpansion::from_abigen(self.abigens)?.expand(),
-            rustfmt,
-        })
+        let format = self.abigens.iter().any(|gen| gen.format);
+        Ok(MultiBindings { expansion: MultiExpansion::from_abigen(self.abigens)?.expand(), format })
     }
 }
 
@@ -181,12 +178,12 @@ impl MultiExpansion {
         let mut shared_types = Vec::new();
         // this keeps track of those contracts that need to be updated after a struct was
         // extracted from the contract's module and moved to the shared module
-        let mut dirty_contracts = HashSet::new();
+        let mut dirty_contracts = BTreeSet::new();
 
         // merge all types if more than 1 contract
         if expansions.len() > 1 {
             // check for type conflicts across all contracts
-            let mut conflicts: HashMap<String, Vec<usize>> = HashMap::new();
+            let mut conflicts: BTreeMap<String, Vec<usize>> = BTreeMap::new();
             for (idx, (_, ctx)) in expansions.iter().enumerate() {
                 for type_identifier in ctx.internal_structs().rust_type_names().keys() {
                     conflicts
@@ -233,7 +230,7 @@ pub struct MultiExpansionResult {
     root: Option<PathBuf>,
     contracts: Vec<(ExpandedContract, Context)>,
     /// contains the indices of contracts with structs that need to be updated
-    dirty_contracts: HashSet<usize>,
+    dirty_contracts: BTreeSet<usize>,
     /// all type definitions of types that are shared by multiple contracts
     shared_types: Vec<TokenStream>,
 }
@@ -298,14 +295,14 @@ impl MultiExpansionResult {
     }
 
     /// Converts this result into [`MultiBindingsInner`]
-    fn into_bindings(mut self, single_file: bool, rustfmt: bool) -> MultiBindingsInner {
+    fn into_bindings(mut self, single_file: bool, format: bool) -> MultiBindingsInner {
         self.set_shared_import_path(single_file);
         let Self { contracts, shared_types, root, .. } = self;
         let bindings = contracts
             .into_iter()
             .map(|(expanded, ctx)| ContractBindings {
                 tokens: expanded.into_tokens(),
-                rustfmt,
+                format,
                 name: ctx.contract_name().to_string(),
             })
             .map(|v| (v.name.clone(), v))
@@ -325,7 +322,7 @@ impl MultiExpansionResult {
             };
             Some(ContractBindings {
                 tokens: shared_types,
-                rustfmt,
+                format,
                 name: "shared_types".to_string(),
             })
         } else {
@@ -364,7 +361,7 @@ impl MultiExpansionResult {
 ///     changed)
 pub struct MultiBindings {
     expansion: MultiExpansionResult,
-    rustfmt: bool,
+    format: bool,
 }
 
 impl MultiBindings {
@@ -378,18 +375,25 @@ impl MultiBindings {
         self.expansion.contracts.is_empty()
     }
 
-    /// Specify whether or not to format the code using a locally installed copy
-    /// of `rustfmt`.
-    ///
-    /// Note that in case `rustfmt` does not exist or produces an error, the
-    /// unformatted code will be used.
+    #[must_use]
+    #[deprecated = "Use format instead"]
+    #[doc(hidden)]
     pub fn rustfmt(mut self, rustfmt: bool) -> Self {
-        self.rustfmt = rustfmt;
+        self.format = rustfmt;
+        self
+    }
+
+    /// Specify whether to format the code or not. True by default.
+    ///
+    /// This will use [`prettyplease`], so the resulting formatted code **will not** be affected by
+    /// the local `rustfmt` version or config.
+    pub fn format(mut self, format: bool) -> Self {
+        self.format = format;
         self
     }
 
     fn into_inner(self, single_file: bool) -> MultiBindingsInner {
-        self.expansion.into_bindings(single_file, self.rustfmt)
+        self.expansion.into_bindings(single_file, self.format)
     }
 
     /// Generates all the bindings and writes them to the given module
@@ -1338,7 +1342,7 @@ contract Enum {
  [package]
         name = "ethers-contract"
         version = "1.0.0"
-        edition = "2018"
+        edition = "2021"
         rust-version = "1.64"
         authors = ["Georgios Konstantopoulos <me@gakonst.com>"]
         license = "MIT OR Apache-2.0"
@@ -1384,7 +1388,7 @@ contract Enum {
  [package]
         name = "ethers-contract"
         version = "1.0.0"
-        edition = "2018"
+        edition = "2021"
         rust-version = "1.64"
         authors = ["Georgios Konstantopoulos <me@gakonst.com>"]
         license = "MIT OR Apache-2.0"
@@ -1431,7 +1435,7 @@ contract Enum {
     [package]
         name = "ethers-contract"
         version = "1.0.0"
-        edition = "2018"
+        edition = "2021"
         rust-version = "1.64"
         authors = ["Georgios Konstantopoulos <me@gakonst.com>"]
         license = "MIT OR Apache-2.0"
@@ -1478,7 +1482,7 @@ contract Enum {
     [package]
         name = "ethers-contract"
         version = "1.0.0"
-        edition = "2018"
+        edition = "2021"
         rust-version = "1.64"
         authors = ["Georgios Konstantopoulos <me@gakonst.com>"]
         license = "MIT OR Apache-2.0"

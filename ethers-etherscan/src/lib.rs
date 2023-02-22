@@ -1,6 +1,6 @@
 //! Bindings for [etherscan.io web api](https://docs.etherscan.io/)
 
-use crate::errors::is_blocked_by_cloudflare_response;
+use crate::errors::{is_blocked_by_cloudflare_response, is_cloudflare_security_challenge};
 use contract::ContractMetadata;
 use errors::EtherscanError;
 use ethers_core::{
@@ -34,7 +34,7 @@ pub struct Client {
     /// Client that executes HTTP requests
     client: reqwest::Client,
     /// Etherscan API key
-    api_key: String,
+    api_key: Option<String>,
     /// Etherscan API endpoint like <https://api(-chain).etherscan.io/api>
     etherscan_api_url: Url,
     /// Etherscan base endpoint like <https://etherscan.io>
@@ -95,6 +95,7 @@ impl Client {
             Chain::Arbitrum |
             Chain::ArbitrumTestnet |
             Chain::ArbitrumGoerli |
+            Chain::ArbitrumNova |
             Chain::Cronos |
             Chain::CronosTestnet |
             Chain::Aurora |
@@ -119,6 +120,7 @@ impl Client {
             Chain::Moonbeam | Chain::Moonbase | Chain::MoonbeamDev | Chain::Moonriver => {
                 std::env::var("MOONSCAN_API_KEY")?
             }
+            Chain::Canto | Chain::CantoTestnet => std::env::var("BLOCKSCOUT_API_KEY")?,
             Chain::AnvilHardhat | Chain::Dev => {
                 return Err(EtherscanError::LocalNetworksNotSupported)
             }
@@ -206,8 +208,12 @@ impl Client {
         let res = res.as_ref();
         let res: ResponseData<T> = serde_json::from_str(res).map_err(|err| {
             error!(target: "etherscan", ?res, "Failed to deserialize response: {}", err);
-            if is_blocked_by_cloudflare_response(res) {
+            if res == "Page not found" {
+                EtherscanError::PageNotFound
+            } else if is_blocked_by_cloudflare_response(res) {
                 EtherscanError::BlockedByCloudflare
+            } else if is_cloudflare_security_challenge(res) {
+                EtherscanError::CloudFlareSecurityChallenge
             } else {
                 EtherscanError::Serde(err)
             }
@@ -234,7 +240,7 @@ impl Client {
         other: T,
     ) -> Query<T> {
         Query {
-            apikey: Cow::Borrowed(&self.api_key),
+            apikey: self.api_key.as_deref().map(Cow::Borrowed),
             module: Cow::Borrowed(module),
             action: Cow::Borrowed(action),
             other,
@@ -284,7 +290,7 @@ impl ClientBuilder {
     ///
     /// Fails if the `etherscan_url` is not a valid `Url`
     pub fn with_url(mut self, etherscan_url: impl IntoUrl) -> Result<Self> {
-        self.etherscan_url = Some(etherscan_url.into_url()?);
+        self.etherscan_url = Some(ensure_url(etherscan_url)?);
         Ok(self)
     }
 
@@ -300,13 +306,13 @@ impl ClientBuilder {
     ///
     /// Fails if the `etherscan_api_url` is not a valid `Url`
     pub fn with_api_url(mut self, etherscan_api_url: impl IntoUrl) -> Result<Self> {
-        self.etherscan_api_url = Some(etherscan_api_url.into_url()?);
+        self.etherscan_api_url = Some(ensure_url(etherscan_api_url)?);
         Ok(self)
     }
 
     /// Configures the etherscan api key
     pub fn with_api_key(mut self, api_key: impl Into<String>) -> Self {
-        self.api_key = Some(api_key.into());
+        self.api_key = Some(api_key.into()).filter(|s| !s.is_empty());
         self
     }
 
@@ -320,7 +326,6 @@ impl ClientBuilder {
     ///
     /// # Errors
     /// if required fields are missing:
-    ///   - `api_key`
     ///   - `etherscan_api_url`
     ///   - `etherscan_url`
     pub fn build(self) -> Result<Client> {
@@ -328,8 +333,7 @@ impl ClientBuilder {
 
         let client = Client {
             client: client.unwrap_or_default(),
-            api_key: api_key
-                .ok_or_else(|| EtherscanError::Builder("etherscan api key".to_string()))?,
+            api_key,
             etherscan_api_url: etherscan_api_url
                 .ok_or_else(|| EtherscanError::Builder("etherscan api url".to_string()))?,
             etherscan_url: etherscan_url
@@ -433,11 +437,31 @@ pub enum ResponseData<T> {
 /// The type that gets serialized as query
 #[derive(Clone, Debug, Serialize)]
 struct Query<'a, T: Serialize> {
-    apikey: Cow<'a, str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    apikey: Option<Cow<'a, str>>,
     module: Cow<'a, str>,
     action: Cow<'a, str>,
     #[serde(flatten)]
     other: T,
+}
+
+/// Ensures that the url is well formatted to be used by the Client's functions that join paths.
+fn ensure_url(url: impl IntoUrl) -> std::result::Result<Url, reqwest::Error> {
+    let url_str = url.as_str();
+
+    // ensure URL ends with `/`
+    if url_str.ends_with('/') {
+        url.into_url()
+    } else {
+        into_url(format!("{url_str}/"))
+    }
+}
+
+/// This is a hack to work around `IntoUrl`'s sealed private functions, which can't be called
+/// normally.
+#[inline]
+fn into_url(url: impl IntoUrl) -> std::result::Result<Url, reqwest::Error> {
+    url.into_url()
 }
 
 #[cfg(test)]
@@ -448,6 +472,14 @@ mod tests {
         future::Future,
         time::{Duration, SystemTime},
     };
+
+    #[test]
+    fn test_api_paths() {
+        let client = Client::new(Chain::Goerli, "").unwrap();
+        assert_eq!(client.etherscan_api_url.as_str(), "https://api-goerli.etherscan.io/api/");
+
+        assert_eq!(client.block_url(100), "https://goerli.etherscan.io/block/100");
+    }
 
     #[test]
     fn chain_not_supported() {

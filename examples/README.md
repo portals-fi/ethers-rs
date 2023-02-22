@@ -22,7 +22,7 @@
     - [x] Events with meta
     - [ ] Methods
 - [ ] Events
-  - [ ] Logs and filtering
+  - [x] Logs and filtering
   - [ ] Solidity topics
 - [ ] Middleware
   - [x] Builder
@@ -34,10 +34,10 @@
   - [x] Signer
   - [ ] Time lag
   - [ ] Transformer
-- [ ] Providers
+- [x] Providers
   - [x] Http
   - [x] IPC
-  - [ ] Mock 
+  - [x] Mock 
   - [x] Quorum
   - [x] Retry
   - [x] RW
