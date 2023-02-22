@@ -1,6 +1,6 @@
 [package]
 name = "ethers-contract"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 rust-version = "1.64"
 authors = ["Georgios Konstantopoulos <me@gakonst.com>"]
@@ -47,7 +47,12 @@ default = ["abigen"]
 eip712 = ["ethers-derive-eip712", "ethers-core/eip712"]
 abigen = ["ethers-contract-abigen/reqwest", "ethers-contract-derive"]
 abigen-offline = ["ethers-contract-abigen", "ethers-contract-derive"]
-celo = ["legacy", "ethers-core/celo", "ethers-core/celo", "ethers-providers/celo"]
+celo = [
+    "legacy",
+    "ethers-core/celo",
+    "ethers-core/celo",
+    "ethers-providers/celo",
+]
 legacy = []
 
 rustls = ["ethers-contract-abigen/rustls"]

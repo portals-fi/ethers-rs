@@ -1,6 +1,6 @@
 [package]
 name = "ethers-etherscan"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 rust-version = "1.64"
 authors = [
@@ -36,7 +36,10 @@ getrandom = { version = "0.2", features = ["js"] }
 tempfile = "3.3.0"
 tokio = { version = "1.18", features = ["macros", "rt-multi-thread", "time"] }
 serial_test = "0.10.0"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "env-filter",
+    "fmt",
+] }
 ethers-solc = { version = "^1.0.0", path = "../ethers-solc", default-features = false }
 
 [package.metadata.docs.rs]

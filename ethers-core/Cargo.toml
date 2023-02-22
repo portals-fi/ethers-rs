@@ -1,6 +1,6 @@
 [package]
 name = "ethers-core"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 rust-version = "1.64"
 authors = ["Georgios Konstantopoulos <me@gakonst.com>"]
@@ -11,23 +11,36 @@ repository = "https://github.com/gakonst/ethers-rs"
 keywords = ["ethereum", "web3", "celo", "ethers"]
 
 [dependencies]
-open-fastrlp = { version = "0.1.4", features = ["std", "derive", "ethereum-types"] }
+open-fastrlp = { version = "0.1.4", features = [
+    "std",
+    "derive",
+    "ethereum-types",
+] }
 rlp = { version = "0.5.2", default-features = false, features = ["std"] }
-ethabi = { version = "18.0.0", default-features = false, features = ["full-serde", "rlp"] }
+ethabi = { version = "18.0.0", default-features = false, features = [
+    "full-serde",
+    "rlp",
+] }
 arrayvec = { version = "0.7.2", default-features = false }
 rlp-derive = { version = "0.1.0", default-features = false }
 
 # crypto
 elliptic-curve = { version = "0.12.3", default-features = false }
 generic-array = { version = "0.14.6", default-features = false }
-k256 = { version = "0.11", default-features = false, features = ["keccak256", "ecdsa", "std"] }
+k256 = { version = "0.11", default-features = false, features = [
+    "keccak256",
+    "ecdsa",
+    "std",
+] }
 rand = { version = "0.8.5", default-features = false }
 tiny-keccak = { version = "2.0.2", default-features = false }
 
 # misc
 chrono = { version = "0.4", default-features = false }
 serde = { version = "1.0.124", default-features = false, features = ["derive"] }
-serde_json = { version = "1.0.64", default-features = false, features = ["arbitrary_precision"] }
+serde_json = { version = "1.0.64", default-features = false, features = [
+    "arbitrary_precision",
+] }
 thiserror = { version = "1.0", default-features = false }
 bytes = { version = "1.4.0", features = ["serde"] }
 hex = { version = "0.4.3", default-features = false, features = ["std"] }
@@ -59,7 +72,9 @@ hex-literal = "0.3.4"
 rand = "0.8.5"
 
 [features]
-celo = ["legacy"] # celo support extends the transaction format with extra fields
+celo = [
+    "legacy",
+] # celo support extends the transaction format with extra fields
 legacy = []
 eip712 = ["convert_case", "syn", "proc-macro2"]
 macros = ["syn", "cargo_metadata", "once_cell"]
