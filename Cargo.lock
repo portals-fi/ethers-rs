@@ -437,7 +437,7 @@ dependencies = [
  "cargo-platform",
  "semver",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "thiserror",
 ]
 
@@ -790,7 +790,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_derive",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "tinytemplate",
  "tokio",
  "walkdir",
@@ -1255,7 +1255,7 @@ dependencies = [
  "rand 0.8.5",
  "scrypt",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "sha2 0.10.6",
  "sha3",
  "thiserror",
@@ -1273,7 +1273,7 @@ dependencies = [
  "once_cell",
  "regex",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "sha3",
  "thiserror",
  "uint",
@@ -1312,7 +1312,7 @@ dependencies = [
 
 [[package]]
 name = "ethers"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "bytes",
  "ethers-addressbook",
@@ -1327,7 +1327,7 @@ dependencies = [
  "hex",
  "rand 0.8.5",
  "serde",
- "serde_json 1.0.93 (git+https://github.com/portals-fi/json?branch=master)",
+ "serde_json 1.1.0",
  "tokio",
 ]
 
@@ -1338,7 +1338,7 @@ dependencies = [
  "ethers-core",
  "once_cell",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
 ]
 
 [[package]]
@@ -1357,7 +1357,7 @@ dependencies = [
  "once_cell",
  "pin-project",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "thiserror",
  "tokio",
 ]
@@ -1379,7 +1379,7 @@ dependencies = [
  "regex",
  "reqwest",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "syn",
  "tempfile",
  "toml",
@@ -1396,7 +1396,7 @@ dependencies = [
  "hex",
  "proc-macro2",
  "quote",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "syn",
 ]
 
@@ -1424,7 +1424,7 @@ dependencies = [
  "rlp",
  "rlp-derive",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "strum",
  "syn",
  "tempfile",
@@ -1441,7 +1441,7 @@ dependencies = [
  "ethers-core",
  "hex",
  "quote",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "syn",
 ]
 
@@ -1456,7 +1456,7 @@ dependencies = [
  "semver",
  "serde",
  "serde-aux",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "serial_test",
  "tempfile",
  "thiserror",
@@ -1485,7 +1485,7 @@ dependencies = [
  "rand 0.8.5",
  "reqwest",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "serial_test",
  "thiserror",
  "tokio",
@@ -1517,7 +1517,7 @@ dependencies = [
  "pin-project",
  "reqwest",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1554,7 +1554,7 @@ dependencies = [
  "rusoto_core",
  "rusoto_kms",
  "semver",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "sha2 0.10.6",
  "spki",
  "tempfile",
@@ -1591,7 +1591,7 @@ dependencies = [
  "regex",
  "semver",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "serde_path_to_error",
  "sha2 0.10.6",
  "solang-parser",
@@ -1616,7 +1616,7 @@ dependencies = [
  "hex",
  "serde",
  "serde-wasm-bindgen",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -1647,7 +1647,7 @@ dependencies = [
  "ethers",
  "eyre",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "tokio",
 ]
 
@@ -1658,7 +1658,7 @@ dependencies = [
  "ethers",
  "eyre",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "tokio",
 ]
 
@@ -1669,7 +1669,7 @@ dependencies = [
  "async-trait",
  "ethers",
  "eyre",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "thiserror",
  "tokio",
 ]
@@ -1682,7 +1682,7 @@ dependencies = [
  "eyre",
  "reqwest",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "tokio",
 ]
 
@@ -1693,7 +1693,7 @@ dependencies = [
  "ethers",
  "eyre",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "tokio",
 ]
 
@@ -1704,7 +1704,7 @@ dependencies = [
  "ethers",
  "eyre",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "tokio",
 ]
 
@@ -1715,7 +1715,7 @@ dependencies = [
  "ethers",
  "eyre",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "tokio",
 ]
 
@@ -1726,7 +1726,7 @@ dependencies = [
  "ethers",
  "eyre",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "tokio",
 ]
 
@@ -3404,7 +3404,7 @@ dependencies = [
  "rustls",
  "rustls-pemfile",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "serde_urlencoded",
  "tokio",
  "tokio-native-tls",
@@ -3504,7 +3504,7 @@ dependencies = [
  "rusoto_signature",
  "rustc_version",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "tokio",
  "xml-rs",
 ]
@@ -3521,7 +3521,7 @@ dependencies = [
  "futures",
  "hyper",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "shlex",
  "tokio",
  "zeroize",
@@ -3538,7 +3538,7 @@ dependencies = [
  "futures",
  "rusoto_core",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
 ]
 
 [[package]]
@@ -3788,7 +3788,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c599b3fd89a75e0c18d6d2be693ddb12cccaf771db4ff9e39097104808a014c0"
 dependencies = [
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
 ]
 
 [[package]]
@@ -3836,8 +3836,8 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.93"
-source = "git+https://github.com/portals-fi/json?branch=master#c566b510c3a0911960fe2c4f6daa8eacffd8053a"
+version = "1.1.0"
+source = "git+https://github.com/portals-fi/json?branch=master#e79335d4c9de2d239c8740bd2156827368fd2c0c"
 dependencies = [
  "itoa",
  "ryu",
@@ -4138,7 +4138,7 @@ dependencies = [
  "reqwest",
  "semver",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "sha2 0.9.9",
  "tempfile",
  "thiserror",
@@ -4157,7 +4157,7 @@ dependencies = [
  "build_const",
  "hex",
  "semver",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "svm-rs",
 ]
 
@@ -4321,7 +4321,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be4d6b5f19ff7664e8c98d03e2139cb510db9b0a60b55f8e8709b689d939b6bc"
 dependencies = [
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
 ]
 
 [[package]]
@@ -4728,7 +4728,7 @@ checksum = "31f8dcbc21f30d9b8f2ea926ecb58f6b91192c17e9d33594b3df58b2007ca53b"
 dependencies = [
  "cfg-if 1.0.0",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "wasm-bindgen-macro",
 ]
 
@@ -5053,7 +5053,7 @@ dependencies = [
  "rand_core 0.6.4",
  "rusb",
  "serde",
- "serde_json 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.93",
  "sha2 0.10.6",
  "signature",
  "subtle",
