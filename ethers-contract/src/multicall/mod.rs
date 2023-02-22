@@ -829,7 +829,7 @@ impl<M: Middleware> Multicall<M> {
 
                 Err(return_data)
             } else {
-                let mut res_tokens = call.function.decode_output(return_data.as_ref()).unwrap_or(vec![Token::Bool(false), Token::Uint(U256::zero())]);
+                let mut res_tokens = call.function.decode_output(return_data.as_ref())?;
                 Ok(if res_tokens.len() == 1 {
                     res_tokens.pop().unwrap()
                 } else {
