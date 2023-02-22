@@ -1,8 +1,8 @@
 use ethers_core::{abi::ParamType, macros::ethers_core_crate, types::Selector};
-use proc_macro2::{Ident, Literal, Span};
+use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{
-    parse::Error, spanned::Spanned as _, Data, DeriveInput, Expr, Fields, GenericArgument, Lit,
+    parse::Error, spanned::Spanned, Data, DeriveInput, Expr, Fields, GenericArgument, Lit,
     PathArguments, Type,
 };
 
@@ -10,26 +10,34 @@ pub fn ident(name: &str) -> Ident {
     Ident::new(name, Span::call_site())
 }
 
-pub fn signature(hash: &[u8]) -> proc_macro2::TokenStream {
-    let core_crate = ethers_core_crate();
+pub fn signature(hash: &[u8]) -> TokenStream {
+    let ethers_core = ethers_core_crate();
     let bytes = hash.iter().copied().map(Literal::u8_unsuffixed);
-    quote! {#core_crate::types::H256([#( #bytes ),*])}
+    quote! {#ethers_core::types::H256([#( #bytes ),*])}
 }
 
-pub fn selector(selector: Selector) -> proc_macro2::TokenStream {
+pub fn selector(selector: Selector) -> TokenStream {
     let bytes = selector.iter().copied().map(Literal::u8_unsuffixed);
     quote! {[#( #bytes ),*]}
 }
 
-/// Parses an int type from its string representation
-pub fn parse_int_param_type(s: &str) -> Option<ParamType> {
-    let size = s.chars().skip(1).collect::<String>().parse::<usize>().ok()?;
-    if s.starts_with('u') {
-        Some(ParamType::Uint(size))
-    } else if s.starts_with('i') {
-        Some(ParamType::Int(size))
-    } else {
-        None
+/// Parses an int / hash type from its string representation
+pub fn parse_param_type(s: &str) -> Option<ParamType> {
+    match s.chars().next() {
+        Some('H' | 'h') => {
+            let size = s[1..].parse::<usize>().ok()? / 8;
+            Some(ParamType::FixedBytes(size))
+        }
+
+        Some(c @ 'U' | c @ 'I' | c @ 'u' | c @ 'i') => {
+            let size = s[1..].parse::<usize>().ok()?;
+            if matches!(c, 'U' | 'u') {
+                Some(ParamType::Uint(size))
+            } else {
+                Some(ParamType::Int(size))
+            }
+        }
+        _ => None,
     }
 }
 
@@ -37,64 +45,58 @@ pub fn parse_int_param_type(s: &str) -> Option<ParamType> {
 // This applies to strings, arrays, structs and bytes to follow the encoding of
 // these indexed param types according to
 // <https://solidity.readthedocs.io/en/develop/abi-spec.html#encoding-of-indexed-event-parameters>
-pub fn topic_param_type_quote(kind: &ParamType) -> proc_macro2::TokenStream {
-    let core_crate = ethers_core_crate();
+pub fn topic_param_type_quote(kind: &ParamType) -> TokenStream {
+    let ethers_core = ethers_core_crate();
     match kind {
         ParamType::String |
         ParamType::Bytes |
         ParamType::Array(_) |
         ParamType::FixedArray(_, _) |
-        ParamType::Tuple(_) => quote! {#core_crate::abi::ParamType::FixedBytes(32)},
+        ParamType::Tuple(_) => quote! {#ethers_core::abi::ParamType::FixedBytes(32)},
         ty => param_type_quote(ty),
     }
 }
 
 /// Returns the rust type for the given parameter
-pub fn param_type_quote(kind: &ParamType) -> proc_macro2::TokenStream {
-    let core_crate = ethers_core_crate();
+pub fn param_type_quote(kind: &ParamType) -> TokenStream {
+    let ethers_core = ethers_core_crate();
     match kind {
         ParamType::Address => {
-            quote! {#core_crate::abi::ParamType::Address}
+            quote! {#ethers_core::abi::ParamType::Address}
         }
         ParamType::Bytes => {
-            quote! {#core_crate::abi::ParamType::Bytes}
+            quote! {#ethers_core::abi::ParamType::Bytes}
         }
         ParamType::Int(size) => {
             let size = Literal::usize_suffixed(*size);
-            quote! {#core_crate::abi::ParamType::Int(#size)}
+            quote! {#ethers_core::abi::ParamType::Int(#size)}
         }
         ParamType::Uint(size) => {
             let size = Literal::usize_suffixed(*size);
-            quote! {#core_crate::abi::ParamType::Uint(#size)}
+            quote! {#ethers_core::abi::ParamType::Uint(#size)}
         }
         ParamType::Bool => {
-            quote! {#core_crate::abi::ParamType::Bool}
+            quote! {#ethers_core::abi::ParamType::Bool}
         }
         ParamType::String => {
-            quote! {#core_crate::abi::ParamType::String}
+            quote! {#ethers_core::abi::ParamType::String}
         }
         ParamType::Array(ty) => {
             let ty = param_type_quote(ty);
-            quote! {#core_crate::abi::ParamType::Array(Box::new(#ty))}
+            quote! {#ethers_core::abi::ParamType::Array(Box::new(#ty))}
         }
         ParamType::FixedBytes(size) => {
             let size = Literal::usize_suffixed(*size);
-            quote! {#core_crate::abi::ParamType::FixedBytes(#size)}
+            quote! {#ethers_core::abi::ParamType::FixedBytes(#size)}
         }
         ParamType::FixedArray(ty, size) => {
             let ty = param_type_quote(ty);
             let size = Literal::usize_suffixed(*size);
-            quote! {#core_crate::abi::ParamType::FixedArray(Box::new(#ty),#size)}
+            quote! {#ethers_core::abi::ParamType::FixedArray(Box::new(#ty), #size)}
         }
         ParamType::Tuple(tuple) => {
             let elements = tuple.iter().map(param_type_quote);
-            quote! {
-                #core_crate::abi::ParamType::Tuple(
-                    ::std::vec![
-                        #( #elements ),*
-                    ]
-                )
-            }
+            quote!(#ethers_core::abi::ParamType::Tuple(::std::vec![#( #elements ),*]))
         }
     }
 }
@@ -103,55 +105,62 @@ pub fn param_type_quote(kind: &ParamType) -> proc_macro2::TokenStream {
 /// given type
 pub fn find_parameter_type(ty: &Type) -> Result<ParamType, Error> {
     match ty {
-        Type::Array(ty) => {
-            let param = find_parameter_type(ty.elem.as_ref())?;
-            if let Expr::Lit(ref expr) = ty.len {
+        Type::Array(arr) => {
+            let ty = find_parameter_type(&arr.elem)?;
+            if let Expr::Lit(ref expr) = arr.len {
                 if let Lit::Int(ref len) = expr.lit {
                     if let Ok(size) = len.base10_parse::<usize>() {
-                        return Ok(ParamType::FixedArray(Box::new(param), size))
+                        return Ok(ParamType::FixedArray(Box::new(ty), size))
                     }
                 }
             }
-            Err(Error::new(ty.span(), "Failed to derive proper ABI from array field"))
+            Err(Error::new(arr.span(), "Failed to derive proper ABI from array field"))
         }
+
         Type::Path(ty) => {
             // check for `Vec`
-            if ty.path.segments.len() == 1 && ty.path.segments[0].ident == "Vec" {
-                if let PathArguments::AngleBracketed(ref args) = ty.path.segments[0].arguments {
-                    if args.args.len() == 1 {
-                        if let GenericArgument::Type(ref ty) = args.args.iter().next().unwrap() {
-                            let kind = find_parameter_type(ty)?;
-                            return Ok(ParamType::Array(Box::new(kind)))
-                        }
+            if let Some(segment) = ty.path.segments.iter().find(|s| s.ident == "Vec") {
+                if let PathArguments::AngleBracketed(ref args) = segment.arguments {
+                    // Vec<T, A?>
+                    debug_assert!(matches!(args.args.len(), 1 | 2));
+                    let ty = args.args.iter().next().unwrap();
+                    if let GenericArgument::Type(ref ty) = ty {
+                        return find_parameter_type(ty).map(|kind| ParamType::Array(Box::new(kind)))
                     }
                 }
             }
-            let mut ident = ty.path.get_ident();
-            if ident.is_none() {
-                ident = ty.path.segments.last().map(|s| &s.ident);
-            }
-            if let Some(ident) = ident {
-                let ident = ident.to_string().to_lowercase();
-                return match ident.as_str() {
-                    "address" => Ok(ParamType::Address),
-                    "bytes" => Ok(ParamType::Bytes),
-                    "string" => Ok(ParamType::String),
-                    "bool" => Ok(ParamType::Bool),
-                    "int" | "uint" => Ok(ParamType::Uint(256)),
-                    "h160" => Ok(ParamType::FixedBytes(20)),
-                    "h256" | "secret" | "hash" => Ok(ParamType::FixedBytes(32)),
-                    "h512" | "public" => Ok(ParamType::FixedBytes(64)),
-                    s => parse_int_param_type(s).ok_or_else(|| {
-                        Error::new(ty.span(), "Failed to derive proper ABI from fields")
-                    }),
-                }
-            }
-            Err(Error::new(ty.span(), "Failed to derive proper ABI from fields"))
+
+            // match on the last segment of the path
+            ty.path
+                .get_ident()
+                .or_else(|| ty.path.segments.last().map(|s| &s.ident))
+                .and_then(|ident| {
+                    match ident.to_string().as_str() {
+                        // eth types
+                        "Address" => Some(ParamType::Address),
+                        "Bytes" => Some(ParamType::Bytes),
+                        "Uint8" => Some(ParamType::Uint(8)),
+
+                        // core types
+                        "String" => Some(ParamType::String),
+                        "bool" => Some(ParamType::Bool),
+                        // usize / isize, shouldn't happen but use max width
+                        "usize" => Some(ParamType::Uint(64)),
+                        "isize" => Some(ParamType::Int(64)),
+
+                        s => parse_param_type(s),
+                    }
+                })
+                .ok_or_else(|| Error::new(ty.span(), "Failed to derive proper ABI from fields"))
         }
-        Type::Tuple(ty) => {
-            let params = ty.elems.iter().map(find_parameter_type).collect::<Result<Vec<_>, _>>()?;
-            Ok(ParamType::Tuple(params))
-        }
+
+        Type::Tuple(ty) => ty
+            .elems
+            .iter()
+            .map(find_parameter_type)
+            .collect::<Result<Vec<_>, _>>()
+            .map(ParamType::Tuple),
+
         _ => Err(Error::new(ty.span(), "Failed to derive proper ABI from fields")),
     }
 }
@@ -200,29 +209,29 @@ pub fn derive_abi_inputs_from_fields(
 pub fn derive_param_type_with_abi_type(
     input: &DeriveInput,
     trait_name: &str,
-) -> Result<proc_macro2::TokenStream, Error> {
-    let core_crate = ethers_core_crate();
-    let params = derive_abi_parameters_array(input, trait_name)?;
+) -> Result<TokenStream, Error> {
+    let ethers_core = ethers_core_crate();
+    let params = abi_parameters_array(input, trait_name)?;
     Ok(quote! {
-        #core_crate::abi::ParamType::Tuple(::std::vec!#params)
+        #ethers_core::abi::ParamType::Tuple(::std::vec!#params)
     })
 }
 
 /// Use `AbiType::param_type` fo each field to construct the whole signature `<name>(<params,>*)` as
-/// `String`
-pub fn derive_abi_signature_with_abi_type(
+/// `String`.
+pub fn abi_signature_with_abi_type(
     input: &DeriveInput,
     function_name: &str,
     trait_name: &str,
-) -> Result<proc_macro2::TokenStream, Error> {
-    let params = derive_abi_parameters_array(input, trait_name)?;
+) -> Result<TokenStream, Error> {
+    let params = abi_parameters_array(input, trait_name)?;
     Ok(quote! {
         {
             let params: String = #params
-                                 .iter()
-                                 .map(|p| p.to_string())
-                                 .collect::<::std::vec::Vec<_>>()
-                                 .join(",");
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<::std::vec::Vec<_>>()
+                .join(",");
             let function_name = #function_name;
             format!("{}({})", function_name, params)
         }
@@ -231,30 +240,13 @@ pub fn derive_abi_signature_with_abi_type(
 
 /// Use `AbiType::param_type` fo each field to construct the signature's parameters as runtime array
 /// `[param1, param2,...]`
-pub fn derive_abi_parameters_array(
-    input: &DeriveInput,
-    trait_name: &str,
-) -> Result<proc_macro2::TokenStream, Error> {
-    let core_crate = ethers_core_crate();
+pub fn abi_parameters_array(input: &DeriveInput, trait_name: &str) -> Result<TokenStream, Error> {
+    let ethers_core = ethers_core_crate();
 
-    let param_types: Vec<_> = match input.data {
+    let fields = match input.data {
         Data::Struct(ref data) => match data.fields {
-            Fields::Named(ref fields) => fields
-                .named
-                .iter()
-                .map(|f| {
-                    let ty = &f.ty;
-                    quote_spanned! { f.span() => <#ty as #core_crate::abi::AbiType>::param_type() }
-                })
-                .collect(),
-            Fields::Unnamed(ref fields) => fields
-                .unnamed
-                .iter()
-                .map(|f| {
-                    let ty = &f.ty;
-                    quote_spanned! { f.span() => <#ty as #core_crate::abi::AbiType>::param_type() }
-                })
-                .collect(),
+            Fields::Named(ref fields) => &fields.named,
+            Fields::Unnamed(ref fields) => &fields.unnamed,
             Fields::Unit => {
                 return Err(Error::new(
                     input.span(),
@@ -276,7 +268,106 @@ pub fn derive_abi_parameters_array(
         }
     };
 
+    let iter = fields.iter().map(|f| {
+        let ty = &f.ty;
+        quote_spanned!(f.span() => <#ty as #ethers_core::abi::AbiType>::param_type())
+    });
+
     Ok(quote! {
-        [#( #param_types ),*]
+        [#( #iter ),*]
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    macro_rules! type_test_cases {
+        ($($t:ty => $e:expr),+ $(,)?) => {{
+            &[
+                $(
+                    (parse_quote!($t), $e),
+                )+
+            ]
+        }};
+    }
+
+    fn arr(ty: ParamType) -> ParamType {
+        ParamType::Array(Box::new(ty))
+    }
+
+    fn farr(ty: ParamType, len: usize) -> ParamType {
+        ParamType::FixedArray(Box::new(ty), len)
+    }
+
+    #[test]
+    fn can_find_params() {
+        use ParamType as PT;
+        let test_cases: &[(Type, ParamType)] = type_test_cases! {
+            u8 => PT::Uint(8),
+            u16 => PT::Uint(16),
+            u32 => PT::Uint(32),
+            u64 => PT::Uint(64),
+            usize => PT::Uint(64),
+            u128 => PT::Uint(128),
+            ::ethers::types::U256 => PT::Uint(256),
+            ethers::types::U256 => PT::Uint(256),
+            ::ethers_core::types::U256 => PT::Uint(256),
+            ethers_core::types::U256 => PT::Uint(256),
+            U256 => PT::Uint(256),
+
+            i8 => PT::Int(8),
+            i16 => PT::Int(16),
+            i32 => PT::Int(32),
+            i64 => PT::Int(64),
+            isize => PT::Int(64),
+            i128 => PT::Int(128),
+            ::ethers::types::I256 => PT::Int(256),
+            ethers::types::I256 => PT::Int(256),
+            ::ethers_core::types::I256 => PT::Int(256),
+            ethers_core::types::I256 => PT::Int(256),
+            I256 => PT::Int(256),
+
+
+            ::ethers::types::H160 => PT::FixedBytes(20),
+            H160 => PT::FixedBytes(20),
+            ::ethers::types::H256 => PT::FixedBytes(32),
+            H256 => PT::FixedBytes(32),
+            ::ethers::types::H512 => PT::FixedBytes(64),
+            H512 => PT::FixedBytes(64),
+
+            ::std::vec::Vec<::ethers_core::types::U256, ::std::alloc::Global> => arr(PT::Uint(256)),
+            ::std::vec::Vec<::ethers_core::types::U256, Global> => arr(PT::Uint(256)),
+            ::std::vec::Vec<::ethers_core::types::U256> => arr(PT::Uint(256)),
+            ::std::vec::Vec<ethers::types::U256> => arr(PT::Uint(256)),
+            ::std::vec::Vec<U256> => arr(PT::Uint(256)),
+            std::vec::Vec<U256> => arr(PT::Uint(256)),
+            vec::Vec<U256> => arr(PT::Uint(256)),
+            Vec<U256> => arr(PT::Uint(256)),
+
+            [u64; 8] => farr(PT::Uint(64), 8),
+            [u64; 16] => farr(PT::Uint(64), 16),
+            [::ethers_core::types::U256; 2] => farr(PT::Uint(256), 2),
+            [String; 4] => farr(PT::String, 4),
+            [Address; 2] => farr(PT::Address, 2),
+
+            (String, String, Address) => PT::Tuple(vec![PT::String, PT::String, PT::Address]),
+            (::ethers_core::types::U256, u8, ::ethers_core::types::Address)
+                => PT::Tuple(vec![PT::Uint(256), PT::Uint(8), PT::Address]),
+            (::ethers::types::Bytes, ::ethers::types::H256, (::ethers::types::Address, ::std::string::String))
+                => PT::Tuple(vec![
+                    PT::Bytes,
+                    PT::FixedBytes(32),
+                    PT::Tuple(vec![PT::Address, PT::String])
+                ]),
+        };
+
+        for (ty, expected) in test_cases {
+            match find_parameter_type(ty) {
+                Ok(ty) => assert_eq!(ty, *expected),
+                Err(e) => panic!("{e}: {ty:#?}\n{expected}"),
+            }
+        }
+    }
 }

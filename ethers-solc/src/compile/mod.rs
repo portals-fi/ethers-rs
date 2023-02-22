@@ -572,10 +572,7 @@ impl Solc {
 #[cfg(feature = "async")]
 impl Solc {
     /// Convenience function for compiling all sources under the given path
-    pub async fn async_compile_source<T: Serialize>(
-        &self,
-        path: impl AsRef<Path>,
-    ) -> Result<CompilerOutput> {
+    pub async fn async_compile_source(&self, path: impl AsRef<Path>) -> Result<CompilerOutput> {
         self.async_compile(&CompilerInput::with_sources(Source::async_read_all_from(path).await?))
             .await
     }
@@ -686,9 +683,10 @@ fn version_from_output(output: Output) -> Result<Version> {
         let version = output
             .stdout
             .lines()
+            .filter_map(|l| l.ok())
+            .filter(|l| !l.trim().is_empty())
             .last()
-            .ok_or_else(|| SolcError::solc("version not found in solc output"))?
-            .map_err(|err| SolcError::msg(format!("Failed to read output: {err}")))?;
+            .ok_or_else(|| SolcError::solc("version not found in solc output"))?;
         // NOTE: semver doesn't like `+` in g++ in build metadata which is invalid semver
         Ok(Version::from_str(&version.trim_start_matches("Version: ").replace(".g++", ".gcc"))?)
     } else {
@@ -832,7 +830,7 @@ mod tests {
             // update this test whenever there's a new sol
             // version. that's ok! good reminder to check the
             // patch notes.
-            (">=0.5.0", "0.8.17"),
+            (">=0.5.0", "0.8.18"),
             // range
             (">=0.4.0 <0.5.0", "0.4.26"),
         ]
@@ -908,6 +906,6 @@ mod tests {
     ///// helpers
 
     fn source(version: &str) -> Source {
-        Source { content: format!("pragma solidity {version};\n") }
+        Source::new(format!("pragma solidity {version};\n"))
     }
 }

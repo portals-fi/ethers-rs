@@ -1,4 +1,5 @@
 #![allow(unused)]
+
 pub use crate::common::*;
 use ethers_contract::{abigen, ContractFactory, EthAbiType};
 use ethers_core::types::{Filter, ValueOrArray, H256};
@@ -6,16 +7,102 @@ use ethers_core::types::{Filter, ValueOrArray, H256};
 #[cfg(not(feature = "celo"))]
 mod eth_tests {
     use super::*;
-    use ethers_contract::{EthEvent, LogMeta, Multicall, MulticallVersion};
+    use ethers_contract::{
+        ContractInstance, EthEvent, LogMeta, Multicall, MulticallError, MulticallVersion,
+    };
     use ethers_core::{
-        abi::{encode, Detokenize, Token, Tokenizable},
-        types::{transaction::eip712::Eip712, Address, BlockId, Bytes, I256, U256},
+        abi::{encode, AbiEncode, Detokenize, Token, Tokenizable},
+        types::{transaction::eip712::Eip712, Address, BlockId, Bytes, H160, I256, U256},
         utils::{keccak256, Anvil},
     };
     use ethers_derive_eip712::*;
-    use ethers_providers::{Http, Middleware, PendingTransaction, Provider, StreamExt};
+    use ethers_providers::{
+        Http, Middleware, MiddlewareError, PendingTransaction, Provider, StreamExt,
+    };
     use ethers_signers::{LocalWallet, Signer};
     use std::{convert::TryFrom, iter::FromIterator, sync::Arc, time::Duration};
+
+    #[derive(Debug)]
+    pub struct NonClone<M> {
+        m: M,
+    }
+
+    #[derive(Debug)]
+    pub struct MwErr<M: Middleware>(M::Error);
+
+    impl<M> MiddlewareError for MwErr<M>
+    where
+        M: Middleware,
+    {
+        type Inner = M::Error;
+
+        fn from_err(src: M::Error) -> Self {
+            Self(src)
+        }
+
+        fn as_inner(&self) -> Option<&Self::Inner> {
+            Some(&self.0)
+        }
+    }
+
+    impl<M: Middleware> std::fmt::Display for MwErr<M> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            Ok(())
+        }
+    }
+    impl<M: Middleware> std::error::Error for MwErr<M> {}
+
+    impl<M: Middleware> Middleware for NonClone<M> {
+        type Error = MwErr<M>;
+
+        type Provider = M::Provider;
+
+        type Inner = M;
+
+        fn inner(&self) -> &Self::Inner {
+            &self.m
+        }
+    }
+
+    // this is not a test. It is a compile check. :)
+    // It exists to ensure that trait bounds on contract internal behave as
+    // expected. It should not be run
+    fn it_compiles() {
+        let (abi, bytecode) = compile_contract("SimpleStorage", "SimpleStorage.sol");
+
+        // launch anvil
+        let anvil = Anvil::new().spawn();
+
+        let client = Provider::<Http>::try_from(anvil.endpoint())
+            .unwrap()
+            .interval(Duration::from_millis(10u64));
+
+        // Works (B == M, M: Clone)
+        let c: ContractInstance<&Provider<Http>, Provider<Http>> =
+            ContractInstance::new(H160::default(), abi.clone(), &client);
+
+        let _ = c.method::<(), ()>("notARealMethod", ());
+
+        // Works (B == &M, M: Clone)
+        let c: ContractInstance<Provider<Http>, Provider<Http>> =
+            ContractInstance::new(H160::default(), abi.clone(), client.clone());
+
+        let _ = c.method::<(), ()>("notARealMethod", ());
+
+        let non_clone_mware = NonClone { m: client };
+
+        // Works (B == &M, M: !Clone)
+        let c: ContractInstance<&NonClone<Provider<Http>>, NonClone<Provider<Http>>> =
+            ContractInstance::new(H160::default(), abi, &non_clone_mware);
+
+        let _ = c.method::<(), ()>("notARealMethod", ());
+
+        // // Fails (B == M, M: !Clone)
+        // let c: ContractInternal<NonClone<Provider<Http>>, NonClone<Provider<Http>>> =
+        //     ContractInternal::new(H160::default(), abi, non_clone_mware);
+
+        // let _ = c.method::<(), ()>("notARealMethod", ());
+    }
 
     #[tokio::test]
     async fn deploy_and_call_contract() {
@@ -265,7 +352,7 @@ mod eth_tests {
 
         // Also set up a subscription for the same thing
         let ws = Provider::connect(anvil.ws_endpoint()).await.unwrap();
-        let contract2 = ethers_contract::Contract::new(contract.address(), abi, ws);
+        let contract2 = ethers_contract::Contract::new(contract.address(), abi, ws.into());
         let event2 = contract2.event::<ValueChanged>();
         let mut subscription = event2.subscribe().await.unwrap();
 
@@ -335,7 +422,7 @@ mod eth_tests {
 
         let anvil = Anvil::new().spawn();
         let client = connect(&anvil, 0);
-        let event = ethers_contract::Contract::event_of_type::<AnswerUpdatedFilter>(&client);
+        let event = ethers_contract::Contract::event_of_type::<AnswerUpdatedFilter>(client);
         assert_eq!(event.filter, Filter::new().event(&AnswerUpdatedFilter::abi_signature()));
     }
 
@@ -491,8 +578,7 @@ mod eth_tests {
         multicall_send.clear_calls().add_call(broadcast, false).add_call(broadcast2, false);
 
         // broadcast the transaction and wait for it to be mined
-        let tx_hash = multicall_send.legacy().send().await.unwrap();
-        let _tx_receipt = PendingTransaction::new(tx_hash, client.provider()).await.unwrap();
+        let _tx_receipt = multicall_send.legacy().send().await.unwrap().await.unwrap();
 
         // Do another multicall to check the updated return values
         // The `getValue` calls should return the last value we set in the batched broadcast
@@ -551,21 +637,18 @@ mod eth_tests {
             .await
             .unwrap();
 
-        // build up a list of calls greater than the 16 max restriction
         multicall.add_calls(
             false,
             std::iter::repeat(simple_contract.method::<_, String>("getValue", ()).unwrap())
-                .take(17), // .collect(),
+                .take(17),
         );
 
-        // must use `call_raw` as `.calls` > 16
         let tokens = multicall.call_raw().await.unwrap();
-        // if want to use, must detokenize manually
         let results: Vec<String> = tokens
-            .iter()
-            .map(|token| {
+            .into_iter()
+            .map(|result| {
                 // decode manually using Tokenizable method
-                String::from_token(token.to_owned()).unwrap()
+                String::from_token(result.unwrap()).unwrap()
             })
             .collect();
         assert_eq!(results, ["many"; 17]);
@@ -601,11 +684,11 @@ mod eth_tests {
             .unwrap();
         let get_value_call = reverting_contract
             .connect(client2.clone())
-            .method::<_, String>("getValue", (false))
+            .method::<_, String>("getValue", false)
             .unwrap();
         let get_value_reverting_call = reverting_contract
             .connect(client.clone())
-            .method::<_, String>("getValue", (true))
+            .method::<_, String>("getValue", true)
             .unwrap();
 
         // .send reverts
@@ -639,36 +722,31 @@ mod eth_tests {
             .unwrap();
 
         // .call reverts
-        // don't allow revert
-        multicall
-            .clear_calls()
-            .add_call(get_value_reverting_call.clone(), false)
-            .add_call(get_value_call.clone(), false);
-        let res = multicall.call::<((bool, String), (bool, String))>().await;
-        let err = res.unwrap_err();
-        assert!(err.to_string().contains("Multicall3: call failed"));
+        // don't allow revert -> entire call reverts
+        multicall.clear_calls().add_call(get_value_reverting_call.clone(), false);
+        assert!(matches!(
+            multicall.call::<(String,)>().await.unwrap_err(),
+            MulticallError::ContractError(_)
+        ));
 
-        // allow revert
-        multicall
-            .clear_calls()
-            .add_call(get_value_reverting_call.clone(), true)
-            .add_call(get_value_call.clone(), false);
-        let res = multicall.call().await;
-        let data: ((bool, String), (bool, String)) = res.unwrap();
+        // allow revert -> call doesn't revert, but returns Err(_) in raw tokens
+        let expected = Bytes::from_static(b"getValue revert").encode();
+        multicall.clear_calls().add_call(get_value_reverting_call.clone(), true);
+        assert_eq!(multicall.call_raw().await.unwrap()[0].as_ref().unwrap_err()[4..], expected[..]);
+        assert_eq!(
+            multicall.call::<(String,)>().await.unwrap_err().into_bytes().unwrap()[4..],
+            expected[..]
+        );
 
-        assert!(!data.0 .0); // first call reverted
-        assert_eq!(data.0 .1, "getValue revert"); // first call revert data
-        assert!(data.1 .0); // second call didn't revert
-        assert_eq!(data.1 .1, "reset third again"); // second call return data
-
-        // test v2 illegal revert
+        // v2 illegal revert
         multicall
             .clear_calls()
             .add_call(get_value_reverting_call.clone(), false) // don't allow revert
             .add_call(get_value_call.clone(), true); // true here will result in `tryAggregate(false, ...)`
-        let res = multicall.call::<((bool, String), (bool, String))>().await;
-        let err = res.unwrap_err();
-        assert!(err.to_string().contains("Illegal revert"));
+        assert!(matches!(
+            multicall.call::<(String, String)>().await.unwrap_err(),
+            MulticallError::IllegalRevert
+        ));
 
         // test version 3
         // aggregate3 is the same as try_aggregate except with allowing failure on a per-call basis.
@@ -680,71 +758,49 @@ mod eth_tests {
         let value_tx = reverting_contract.method::<_, H256>("deposit", ()).unwrap().value(amount);
         let rc_addr = reverting_contract.address();
 
-        // add a second call because we can't decode using a single element tuple
-        // ((bool, U256)) == (bool, U256)
-        let bal_before: ((bool, U256), (bool, U256)) = multicall
-            .clear_calls()
-            .add_get_eth_balance(rc_addr, false)
-            .add_get_eth_balance(rc_addr, false)
-            .call()
-            .await
-            .unwrap();
+        let (bal_before,): (U256,) =
+            multicall.clear_calls().add_get_eth_balance(rc_addr, false).call().await.unwrap();
 
         // send 2 value_tx
         multicall.clear_calls().add_call(value_tx.clone(), false).add_call(value_tx.clone(), false);
         multicall.send().await.unwrap();
 
-        let bal_after: ((bool, U256), (bool, U256)) = multicall
-            .clear_calls()
-            .add_get_eth_balance(rc_addr, false)
-            .add_get_eth_balance(rc_addr, false)
-            .call()
-            .await
-            .unwrap();
+        let (bal_after,): (U256,) =
+            multicall.clear_calls().add_get_eth_balance(rc_addr, false).call().await.unwrap();
 
-        assert_eq!(bal_after.0 .1, bal_before.0 .1 + U256::from(2) * amount);
+        assert_eq!(bal_after, bal_before + U256::from(2) * amount);
 
         // test specific revert cases
         // empty revert
         let empty_revert = reverting_contract.method::<_, H256>("emptyRevert", ()).unwrap();
-        multicall
-            .clear_calls()
-            .add_call(empty_revert.clone(), true)
-            .add_call(empty_revert.clone(), true);
-        let res: ((bool, Bytes), (bool, Bytes)) = multicall.call().await.unwrap();
-        assert!(!res.0 .0);
-        assert_eq!(res.0 .1, Bytes::default());
+        multicall.clear_calls().add_call(empty_revert.clone(), true);
+        assert!(multicall.call::<(String,)>().await.unwrap_err().into_bytes().unwrap().is_empty());
 
         // string revert
         let string_revert =
             reverting_contract.method::<_, H256>("stringRevert", ("String".to_string())).unwrap();
-        multicall.clear_calls().add_call(string_revert, true).add_call(empty_revert.clone(), true);
-        let res: ((bool, String), (bool, Bytes)) = multicall.call().await.unwrap();
-        assert!(!res.0 .0);
-        assert_eq!(res.0 .1, "String");
+        multicall.clear_calls().add_call(string_revert, true);
+        assert_eq!(
+            multicall.call::<(String,)>().await.unwrap_err().into_bytes().unwrap()[4..],
+            Bytes::from_static(b"String").encode()[..]
+        );
 
         // custom error revert
         let custom_error = reverting_contract.method::<_, H256>("customError", ()).unwrap();
-        multicall.clear_calls().add_call(custom_error, true).add_call(empty_revert.clone(), true);
-        let res: ((bool, Bytes), (bool, Bytes)) = multicall.call().await.unwrap();
-        let selector = &keccak256("CustomError()")[..4];
-        assert!(!res.0 .0);
-        assert_eq!(res.0 .1.len(), 4);
-        assert_eq!(&res.0 .1[..4], selector);
+        multicall.clear_calls().add_call(custom_error, true);
+        assert_eq!(
+            multicall.call::<(Bytes,)>().await.unwrap_err().into_bytes().unwrap()[..],
+            keccak256("CustomError()")[..4]
+        );
 
         // custom error with data revert
         let custom_error_with_data = reverting_contract
             .method::<_, H256>("customErrorWithData", ("Data".to_string()))
             .unwrap();
-        multicall
-            .clear_calls()
-            .add_call(custom_error_with_data, true)
-            .add_call(empty_revert.clone(), true);
-        let res: ((bool, Bytes), (bool, Bytes)) = multicall.call().await.unwrap();
-        let selector = &keccak256("CustomErrorWithData(string)")[..4];
-        assert!(!res.0 .0);
-        assert_eq!(&res.0 .1[..4], selector);
-        assert_eq!(&res.0 .1[4..], encode(&[Token::String("Data".to_string())]));
+        multicall.clear_calls().add_call(custom_error_with_data, true);
+        let bytes = multicall.call::<(Bytes,)>().await.unwrap_err().into_bytes().unwrap();
+        assert_eq!(bytes[..4], keccak256("CustomErrorWithData(string)")[..4]);
+        assert_eq!(bytes[4..], encode(&[Token::String("Data".to_string())]));
     }
 
     #[tokio::test]

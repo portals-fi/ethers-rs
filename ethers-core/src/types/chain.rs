@@ -1,12 +1,17 @@
 use super::{U128, U256, U512, U64};
-use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use serde::{Deserialize, Serialize, Serializer};
 use std::{
     convert::{TryFrom, TryInto},
     fmt,
     time::Duration,
 };
-use strum::{AsRefStr, EnumString, EnumVariantNames};
+use strum::{AsRefStr, EnumCount, EnumIter, EnumString, EnumVariantNames};
+
+// compatibility re-export
+#[doc(hidden)]
+pub use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
+#[doc(hidden)]
+pub type ParseChainError = TryFromPrimitiveError<Chain>;
 
 // When adding a new chain:
 //   1. add new variant to the Chain enum;
@@ -28,6 +33,8 @@ use strum::{AsRefStr, EnumString, EnumVariantNames};
     AsRefStr,         // also for fmt::Display and serde::Serialize
     EnumVariantNames, // Self::VARIANTS
     EnumString,       // FromStr, TryFrom<&str>
+    EnumIter,
+    EnumCount,
     TryFromPrimitive, // TryFrom<u64>
     Deserialize,
 )]
@@ -50,6 +57,7 @@ pub enum Chain {
     Arbitrum = 42161,
     ArbitrumTestnet = 421611,
     ArbitrumGoerli = 421613,
+    ArbitrumNova = 42170,
 
     Cronos = 25,
     CronosTestnet = 338,
@@ -106,6 +114,9 @@ pub enum Chain {
 
     Aurora = 1313161554,
     AuroraTestnet = 1313161555,
+
+    Canto = 7700,
+    CantoTestnet = 740,
 }
 
 // === impl Chain ===
@@ -132,7 +143,7 @@ macro_rules! impl_try_from_numeric {
     ($($native:ty)+ ; $($primitive:ty)*) => {
         $(
             impl TryFrom<$native> for Chain {
-                type Error = TryFromPrimitiveError<Self>;
+                type Error = ParseChainError;
 
                 fn try_from(value: $native) -> Result<Self, Self::Error> {
                     (value as u64).try_into()
@@ -142,13 +153,13 @@ macro_rules! impl_try_from_numeric {
 
         $(
             impl TryFrom<$primitive> for Chain {
-                type Error = TryFromPrimitiveError<Self>;
+                type Error = ParseChainError;
 
                 fn try_from(value: $primitive) -> Result<Self, Self::Error> {
                     if value.bits() > 64 {
                         // `TryFromPrimitiveError` only has a `number` field which has the same type
                         // as the `#[repr(_)]` attribute on the enum.
-                        return Err(TryFromPrimitiveError { number: value.low_u64() })
+                        return Err(ParseChainError { number: value.low_u64() })
                     }
                     value.low_u64().try_into()
                 }
@@ -166,7 +177,7 @@ impl From<Chain> for u64 {
 impl_into_numeric!(u128 U64 U128 U256 U512);
 
 impl TryFrom<U64> for Chain {
-    type Error = TryFromPrimitiveError<Self>;
+    type Error = ParseChainError;
 
     fn try_from(value: U64) -> Result<Self, Self::Error> {
         value.low_u64().try_into()
@@ -205,14 +216,14 @@ impl Chain {
         use Chain::*;
 
         let ms = match self {
-            Arbitrum | ArbitrumTestnet | ArbitrumGoerli => 1_300,
+            Arbitrum | ArbitrumTestnet | ArbitrumGoerli | ArbitrumNova => 1_300,
             Mainnet | Optimism => 13_000,
             Polygon | PolygonMumbai => 2_100,
             Moonbeam | Moonriver => 12_500,
             BinanceSmartChain | BinanceSmartChainTestnet => 3_000,
             Avalanche | AvalancheFuji => 2_000,
             Fantom | FantomTestnet => 1_200,
-            Cronos | CronosTestnet => 5_700,
+            Cronos | CronosTestnet | Canto | CantoTestnet => 5_700,
             Evmos | EvmosTestnet => 1_900,
             Aurora | AuroraTestnet => 1_100,
             Oasis => 5_500,
@@ -272,10 +283,8 @@ impl Chain {
             ArbitrumTestnet => {
                 ("https://api-testnet.arbiscan.io/api", "https://testnet.arbiscan.io")
             }
-            ArbitrumGoerli => (
-                "https://goerli-rollup-explorer.arbitrum.io/api",
-                "https://goerli-rollup-explorer.arbitrum.io",
-            ),
+            ArbitrumGoerli => ("https://api-goerli.arbiscan.io/api", "https://goerli.arbiscan.io"),
+            ArbitrumNova => ("https://api-nova.arbiscan.io/api", "https://nova.arbiscan.io/"),
             Cronos => ("https://api.cronoscan.com/api", "https://cronoscan.com"),
             CronosTestnet => {
                 ("https://api-testnet.cronoscan.com/api", "https://testnet.cronoscan.com")
@@ -314,6 +323,11 @@ impl Chain {
             CeloBaklava => {
                 ("https://explorer.celo.org/baklava", "https://explorer.celo.org/baklava/api")
             }
+            Canto => ("https://evm.explorer.canto.io/", "https://evm.explorer.canto.io/api"),
+            CantoTestnet => (
+                "https://testnet-explorer.canto.neobase.one/",
+                "https://testnet-explorer.canto.neobase.one/api",
+            ),
             AnvilHardhat | Dev | Morden | MoonbeamDev => {
                 // this is explicitly exhaustive so we don't forget to add new urls when adding a
                 // new chain
@@ -340,6 +354,7 @@ impl Chain {
             Arbitrum |
             ArbitrumTestnet |
             ArbitrumGoerli |
+            ArbitrumNova |
             Rsk |
             Oasis |
             Emerald |
@@ -356,7 +371,7 @@ impl Chain {
             // Unknown / not applicable, default to false for backwards compatibility
             Dev | AnvilHardhat | Morden | Ropsten | Rinkeby | Cronos | CronosTestnet | Kovan |
             Sokol | Poa | XDai | Moonbeam | MoonbeamDev | Moonriver | Moonbase | Evmos |
-            EvmosTestnet | Chiado | Aurora | AuroraTestnet => false,
+            EvmosTestnet | Chiado | Aurora | AuroraTestnet | Canto | CantoTestnet => false,
         }
     }
 }
@@ -364,9 +379,15 @@ impl Chain {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::IntoEnumIterator;
 
     #[test]
     fn test_default_chain() {
         assert_eq!(serde_json::to_string(&Chain::default()).unwrap(), "\"mainnet\"");
+    }
+
+    #[test]
+    fn test_enum_iter() {
+        assert_eq!(Chain::COUNT, Chain::iter().size_hint().0);
     }
 }
