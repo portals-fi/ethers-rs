@@ -70,5 +70,6 @@ pub const MULTICALL_SUPPORTED_CHAIN_IDS: &[u64] = {
         321,                             // KCC
         106,                             // Velas
         40,                              // Telos
+        Base as u64                      // Base
     ]
 };
