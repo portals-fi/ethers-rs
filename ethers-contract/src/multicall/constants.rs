@@ -40,6 +40,7 @@ pub const MULTICALL_SUPPORTED_CHAIN_IDS: &[u64] = {
         AvalancheFuji as u64,            // Avalanche Fuji
         FantomTestnet as u64,            // Fantom Testnet
         Fantom as u64,                   // Fantom Opera
+        Fraxtal as u64,                  // Fraxtal
         BinanceSmartChain as u64,        // BNB Smart Chain
         BinanceSmartChainTestnet as u64, // BNB Smart Chain Testnet
         Moonbeam as u64,                 // Moonbeam
