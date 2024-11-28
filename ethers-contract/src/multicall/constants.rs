@@ -49,6 +49,7 @@ pub const MULTICALL_SUPPORTED_CHAIN_IDS: &[u64] = {
         16,                              // Coston Testnet
         114,                             // Coston2 Testnet
         288,                             // Boba
+        252,                             // Fraxtal Mainnet
         Aurora as u64,                   // Aurora
         592,                             // Astar
         66,                              // OKC

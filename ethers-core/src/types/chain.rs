@@ -107,6 +107,7 @@ pub enum Chain {
     PolygonZkEvmTestnet = 1442,
 
     Fantom = 250,
+    Fraxtal = 252,
     FantomTestnet = 4002,
 
     Moonbeam = 1284,
@@ -287,6 +288,7 @@ impl Chain {
             BinanceSmartChain | BinanceSmartChainTestnet => 3_000,
             Avalanche | AvalancheFuji => 2_000,
             Fantom | FantomTestnet => 1_200,
+            Fraxtal => 2_000,
             Cronos | CronosTestnet | Canto | CantoTestnet => 5_700,
             Evmos | EvmosTestnet => 1_900,
             Aurora | AuroraTestnet => 1_100,
@@ -350,6 +352,7 @@ impl Chain {
             Optimism |
             OptimismGoerli |
             Polygon |
+            Fraxtal |
             PolygonMumbai |
             Avalanche |
             AvalancheFuji |
@@ -442,6 +445,8 @@ impl Chain {
 
             Fantom => ("https://api.ftmscan.com/api", "https://ftmscan.com"),
             FantomTestnet => ("https://api-testnet.ftmscan.com/api", "https://testnet.ftmscan.com"),
+
+            Fraxtal => ("https://api.fraxscan.com/api", "https://fraxscan.com"),
 
             BinanceSmartChain => ("https://api.bscscan.com/api", "https://bscscan.com"),
             BinanceSmartChainTestnet => {
@@ -596,6 +601,8 @@ impl Chain {
             Polygon | PolygonMumbai | PolygonZkEvm | PolygonZkEvmTestnet => "POLYGONSCAN_API_KEY",
 
             Fantom | FantomTestnet => "FTMSCAN_API_KEY",
+
+            Fraxtal => "FRAXTALSCAN_API_KEY",
 
             Moonbeam | Moonbase | MoonbeamDev | Moonriver => "MOONSCAN_API_KEY",
 
