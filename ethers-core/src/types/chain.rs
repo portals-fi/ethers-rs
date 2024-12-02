@@ -341,7 +341,6 @@ impl Chain {
             ZkSync |
             ZkSyncTestnet |
             PolygonZkEvm |
-            Fraxtal |
             PolygonZkEvmTestnet => true,
 
             // Known EIP-1559 chains
@@ -354,6 +353,7 @@ impl Chain {
             OptimismGoerli |
             Polygon |
             PolygonMumbai |
+            Fraxtal |
             Avalanche |
             AvalancheFuji |
             Arbitrum |
