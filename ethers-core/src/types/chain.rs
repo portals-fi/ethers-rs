@@ -352,8 +352,8 @@ impl Chain {
             Optimism |
             OptimismGoerli |
             Polygon |
-            Fraxtal |
             PolygonMumbai |
+            Fraxtal |
             Avalanche |
             AvalancheFuji |
             Arbitrum |
