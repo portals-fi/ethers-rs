@@ -342,6 +342,9 @@ impl Chain {
             ZkSyncTestnet |
             PolygonZkEvm |
             Fraxtal |
+            Arbitrum |
+            ArbitrumGoerli |
+            ArbitrumNova |
             PolygonZkEvmTestnet => true,
 
             // Known EIP-1559 chains
@@ -356,9 +359,9 @@ impl Chain {
             PolygonMumbai |
             Avalanche |
             AvalancheFuji |
-            Arbitrum |
-            ArbitrumGoerli |
-            ArbitrumNova |
+            // Arbitrum |
+            // ArbitrumGoerli |
+            // ArbitrumNova |
             FilecoinMainnet |
             Linea |
             LineaTestnet |
