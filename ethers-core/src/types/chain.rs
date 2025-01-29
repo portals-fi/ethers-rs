@@ -451,7 +451,7 @@ impl Chain {
 
             Fraxtal => ("https://api.fraxscan.com/api", "https://fraxscan.com"),
 
-            Mode => ("https://api.modescan.io/api", "https://modescan.io/"),
+            Mode => ("https://api.routescan.io/v2/network/mainnet/evm/34443/etherscan/api", "https://modescan.io/"),
 
             BinanceSmartChain => ("https://api.bscscan.com/api", "https://bscscan.com"),
             BinanceSmartChainTestnet => {
