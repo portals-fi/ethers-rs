@@ -51,6 +51,7 @@ pub const MULTICALL_SUPPORTED_CHAIN_IDS: &[u64] = {
         288,                             // Boba
         Fraxtal as u64,                  // Fraxtal Mainnet
         Mode as u64,                     // Mode Mainnet
+        Sonic as u64,                    // Sonic Mainnet
         Aurora as u64,                   // Aurora
         592,                             // Astar
         66,                              // OKC
