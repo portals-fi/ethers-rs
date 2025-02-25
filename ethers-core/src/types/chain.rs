@@ -456,7 +456,7 @@ impl Chain {
 
             Mode => ("https://api.routescan.io/v2/network/mainnet/evm/34443/etherscan/api", "https://modescan.io/"),
 
-            Sonic => ("hhttps://api.sonicscan.org/api", "https://sonicscan.org/"),
+            Sonic => ("https://api.sonicscan.org/api", "https://sonicscan.org/"),
 
             BinanceSmartChain => ("https://api.bscscan.com/api", "https://bscscan.com"),
             BinanceSmartChainTestnet => {
