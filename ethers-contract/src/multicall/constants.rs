@@ -52,6 +52,7 @@ pub const MULTICALL_SUPPORTED_CHAIN_IDS: &[u64] = {
         Fraxtal as u64,                  // Fraxtal Mainnet
         Mode as u64,                     // Mode Mainnet
         Sonic as u64,                    // Sonic Mainnet
+        Hyperevm as u64,                 // Hyperevm
         Aurora as u64,                   // Aurora
         592,                             // Astar
         66,                              // OKC
