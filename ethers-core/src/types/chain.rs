@@ -111,6 +111,7 @@ pub enum Chain {
     Mode = 34443,
     Sonic = 146,
     Hyperevm = 999,
+    Plasma = 9745,
     FantomTestnet = 4002,
 
     Moonbeam = 1284,
@@ -295,6 +296,7 @@ impl Chain {
             Mode => 2_000,
             Sonic => 2_000,
             Hyperevm => 2_000,
+            Plasma => 2_000,
             Cronos | CronosTestnet | Canto | CantoTestnet => 5_700,
             Evmos | EvmosTestnet => 1_900,
             Aurora | AuroraTestnet => 1_100,
@@ -363,6 +365,7 @@ impl Chain {
             Mode |
             Sonic |
             Hyperevm |
+            Plasma |
             Avalanche |
             AvalancheFuji |
             Arbitrum |
@@ -462,6 +465,8 @@ impl Chain {
             Sonic => ("https://api.sonicscan.org/api", "https://sonicscan.org/"),
 
             Hyperevm => ("https://api.hyperevmscan.io/api", "https://hyperevmscan.io/"),
+
+            Plasma => ("https://api.plasmascan.to/api", "https://plasmascan.to/"),
 
             BinanceSmartChain => ("https://api.bscscan.com/api", "https://bscscan.com"),
             BinanceSmartChainTestnet => {
@@ -624,6 +629,8 @@ impl Chain {
             Sonic => "SONICSCAN_API_KEY",
 
             Hyperevm => "HYPEREVM_API_KEY",
+
+            Plasma => "PLASMA_API_KEY",
 
             Moonbeam | Moonbase | MoonbeamDev | Moonriver => "MOONSCAN_API_KEY",
 
