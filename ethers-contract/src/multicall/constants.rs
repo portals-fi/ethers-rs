@@ -44,7 +44,6 @@ pub const MULTICALL_SUPPORTED_CHAIN_IDS: &[u64] = {
         1666600003,                      // Harmony3
         Cronos as u64,                   // Cronos
         122,                             // Fuse
-        14,                              // Flare Mainnet
         19,                              // Songbird Canary Network
         16,                              // Coston Testnet
         114,                             // Coston2 Testnet
@@ -54,6 +53,7 @@ pub const MULTICALL_SUPPORTED_CHAIN_IDS: &[u64] = {
         Sonic as u64,                    // Sonic Mainnet
         Hyperevm as u64,                 // Hyperevm
         Plasma as u64,                   // Plasma
+        Flare as u64,                    // Flare
         Aurora as u64,                   // Aurora
         592,                             // Astar
         66,                              // OKC
