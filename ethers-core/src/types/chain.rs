@@ -112,6 +112,7 @@ pub enum Chain {
     Sonic = 146,
     Hyperevm = 999,
     Plasma = 9745,
+    Flare = 14,
     FantomTestnet = 4002,
 
     Moonbeam = 1284,
@@ -297,6 +298,7 @@ impl Chain {
             Sonic => 2_000,
             Hyperevm => 2_000,
             Plasma => 2_000,
+            Flare => 2_000,
             Cronos | CronosTestnet | Canto | CantoTestnet => 5_700,
             Evmos | EvmosTestnet => 1_900,
             Aurora | AuroraTestnet => 1_100,
@@ -366,6 +368,7 @@ impl Chain {
             Sonic |
             Hyperevm |
             Plasma |
+            Flare |
             Avalanche |
             AvalancheFuji |
             Arbitrum |
@@ -467,6 +470,8 @@ impl Chain {
             Hyperevm => ("https://api.hyperevmscan.io/api", "https://hyperevmscan.io/"),
 
             Plasma => ("https://api.plasmascan.to/api", "https://plasmascan.to/"),
+
+            Flare => ("https://api.flarescan.com/api", "https://flarescan.com/"),
 
             BinanceSmartChain => ("https://api.bscscan.com/api", "https://bscscan.com"),
             BinanceSmartChainTestnet => {
@@ -631,6 +636,8 @@ impl Chain {
             Hyperevm => "HYPEREVM_API_KEY",
 
             Plasma => "PLASMA_API_KEY",
+
+            Flare => "FLARE_API_KEY",
 
             Moonbeam | Moonbase | MoonbeamDev | Moonriver => "MOONSCAN_API_KEY",
 
