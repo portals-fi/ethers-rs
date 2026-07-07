@@ -476,7 +476,7 @@ impl Chain {
 
             Flare => ("https://api.flarescan.com/api", "https://flarescan.com/"),
 
-            Robinhood => ("https://robinhoodchain.blockscout.com/", "https://robinhoodchain.blockscout.com/")
+            Robinhood => ("https://robinhoodchain.blockscout.com/", "https://robinhoodchain.blockscout.com/"),
 
             BinanceSmartChain => ("https://api.bscscan.com/api", "https://bscscan.com"),
             BinanceSmartChainTestnet => {
