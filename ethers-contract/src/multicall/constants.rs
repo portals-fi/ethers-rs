@@ -54,6 +54,7 @@ pub const MULTICALL_SUPPORTED_CHAIN_IDS: &[u64] = {
         Hyperevm as u64,                 // Hyperevm
         Plasma as u64,                   // Plasma
         Flare as u64,                    // Flare
+        Robinhood as u64,                // Robinhood
         Aurora as u64,                   // Aurora
         592,                             // Astar
         66,                              // OKC
