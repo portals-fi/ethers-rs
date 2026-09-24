@@ -651,6 +651,8 @@ impl Chain {
 
             Robinhood => "ROBINHOOD_API_KEY",
 
+            Arc => "ARC_API_KEY",
+
             Moonbeam | Moonbase | MoonbeamDev | Moonriver => "MOONSCAN_API_KEY",
 
             Canto | CantoTestnet => "BLOCKSCOUT_API_KEY",
