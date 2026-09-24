@@ -114,6 +114,7 @@ pub enum Chain {
     Plasma = 9745,
     Flare = 14,
     Robinhood = 4663,
+    Arc = 5042,
     FantomTestnet = 4002,
 
     Moonbeam = 1284,
@@ -301,6 +302,7 @@ impl Chain {
             Plasma => 2_000,
             Flare => 2_000,
             Robinhood => 2_000,
+            Arc => 2_000,
             Cronos | CronosTestnet | Canto | CantoTestnet => 5_700,
             Evmos | EvmosTestnet => 1_900,
             Aurora | AuroraTestnet => 1_100,
@@ -372,6 +374,7 @@ impl Chain {
             Plasma |
             Flare |
             Robinhood |
+            Arc |
             Avalanche |
             AvalancheFuji |
             Arbitrum |
@@ -477,6 +480,8 @@ impl Chain {
             Flare => ("https://api.flarescan.com/api", "https://flarescan.com/"),
 
             Robinhood => ("https://robinhoodchain.blockscout.com/", "https://robinhoodchain.blockscout.com/"),
+
+            Arc => ("https://api.etherscan.io/v2/api", "https://arc.etherscan.io/"),
 
             BinanceSmartChain => ("https://api.bscscan.com/api", "https://bscscan.com"),
             BinanceSmartChainTestnet => {
